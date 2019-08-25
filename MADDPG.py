@@ -106,8 +106,8 @@ class DDPG(object):
         trainable = True if reuse is None else False
         with tf.variable_scope('Actor', reuse=reuse, custom_getter=custom_getter):
             net = tf.layers.dense(s, 30, activation=tf.nn.relu, name='l1', trainable=trainable)
-            a = tf.layers.dense(net, 1, activation=tf.nn.sigmoid, name='e', trainable=trainable)
-            return a*a_bound
+            a = tf.layers.dense(net, a_dim, activation=tf.nn.sigmoid, name='e', trainable=trainable)
+            return a
 
     def _build_c(self, s, a, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
@@ -130,31 +130,6 @@ s_dim = env.observation_space.shape[0]
 a_dim = env.action_space.shape[0]
 a_bound = env.action_space.high
 ddpg = DDPG(a_dim, s_dim, a_bound)
-
-
-def turn_to_action(a, m, n):
-    action = np.zeros(n+1)
-    for i in range(n+1):
-        action[i] = a % m
-        a = a // m
-    return action
-
-
-def get_knn(k, a, env, a_list):
-    a_action = turn_to_action(a, env.max_m, env.n)
-
-    ka_list = a_list.copy()
-    if a in ka_list:
-        ka_list.remove(a)
-    L = []
-    distances = [math.sqrt(np.sum((turn_to_action(aa, env.max_m, env.n) - a_action) ** 2)) for aa in ka_list]
-    nearest = np.argsort(distances)
-    for i in nearest[:k]:
-        L.append(ka_list[i])
-    if L:
-        return L
-    else:
-        return [0]
 
 
 D_list = [1.0]
@@ -200,25 +175,12 @@ for d in D_list:
             #         a = np.random.choice(a_list)
             # else:
             if np.random.uniform(0, 5) > var:
-                a_list = env.find_excu_a(s)
-                x = ddpg.choose_action(s)
-                a = int(x)
-                if a == 117649:
-                    a = a - 1
-                # u = env.find_k_excu_a(k, a)
-                u = get_knn(k, a, env, a_list)
-                qu = ddpg.get_q(s, np.reshape(u, (len(u), 1)))
-                qa = ddpg.get_q(s, np.reshape(a, (1, 1)))
-                if a not in a_list or max(qu) > qa:
-                # if not env.is_excu_a(turn_to_action(a, env.max_m, env.n)) or max(qu) > qa:
-                    t = np.argmax(qu, axis=0)
-                    a = u[int(t)]
-                a = np.reshape(a, 1)
+                a = ddpg.choose_action(s)
             else:
                 # a = np.random.choice(a_list)
                 a = np.random.randint(117649)
                 times = 0
-                while not env.is_excu_a(turn_to_action(a, env.max_m, env.n)):
+                while not env.is_excu_a(a):
                     times += 1
                     a = np.random.randint(117649)
                     if times == 10000:

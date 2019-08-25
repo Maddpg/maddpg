@@ -53,7 +53,7 @@ class Mec_co_1(gym.Env):
         self.E_max = self.P_max * (self.N_max * self.W / self.C_max) + self.P_TX * 1
 
         self.t_step = 0
-        self.ls = np.zeros((5002, self.n+1))
+
         self.task = np.zeros(self.n+1)
 
         self.alpha = 1
@@ -72,7 +72,7 @@ class Mec_co_1(gym.Env):
         low = np.zeros(2*self.n+2)
         high = np.ones(2*self.n+2)*self.max_m  # TODO 想一下0和上限问题
 
-        self.action_space = spaces.Box(low=np.array([0]), high=np.array([np.power(self.max_m, self.n+1)]), dtype=np.float32)
+        self.action_space = spaces.Box(low=np.zeros(self.n+1), high=np.ones(self.n+1)*self.max_m, dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         self.seed()
