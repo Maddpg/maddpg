@@ -165,19 +165,9 @@ for d in D_list:
             if RENDER:
                 env.render()
 
-            # Add exploration noise
-            # if test == 1:
-            #     x = ddpg.choose_action(s)
-            #     a = int(x)
-            #     if a == 16807:
-            #         a = a - 1
-            #     if a not in a_list:
-            #         a = np.random.choice(a_list)
-            # else:
-            if np.random.uniform(0, 5) > var:
+            if np.random.uniform(0, 5) > var:     # 重新改变探索策略 TODO
                 a = ddpg.choose_action(s)
             else:
-                # a = np.random.choice(a_list)
                 a = np.random.randint(117649)
                 times = 0
                 while not env.is_excu_a(a):
