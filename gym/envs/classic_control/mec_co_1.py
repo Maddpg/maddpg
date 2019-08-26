@@ -13,7 +13,7 @@ mode = 0   # 0为训练，1为测试
 
 class Mec_co_1(gym.Env):
     metadata = {
-        'render.modes' : ['human', 'rgb_array'],
+        'render.modes': ['human', 'rgb_array'],
         'video.frames_per_second': 30
     }
 
@@ -26,9 +26,12 @@ class Mec_co_1(gym.Env):
         self.net_speed_min = 3
         self.net_speed_max = 7   # 最大传输速率 TODO 想要缩小维度
 
-        self.NL, self.NH = 4, 0
-        self.FL, self.FH = 2, 2.5
-        self.aL = self.aH = 0.15625
+        self.NL = [4, 4, 4, 4, 4]
+        self.NH = [0, 0, 0, 0, 0]
+        self.FL = [2, 2, 2, 2, 2]
+        self.FH = [2.5, 2.5, 2.5, 2.5, 2.5]
+        self.aL = [0.15625, 0.15625, 0.15625, 0.15625, 0.15625]
+        self.aH = [0.15625, 0.15625, 0.15625, 0.15625, 0.15625]
 
         self.W = 2  # 若改变，注意后续取整问题
         self.D = 1.0
@@ -44,14 +47,16 @@ class Mec_co_1(gym.Env):
         self.C = self.C // self.W
 
         self.P_TX = 0.25
+        self.P_RX = 0.25
 
-        self.net = np.random.randint(self.net_speed_min, self.net_speed_max+1, self.n)
+        self.net = np.zeros((self.n, self.n))
 
-        self.C_max = self.NL * self.FL + self.NH * self.FH
-        self.C_max = self.C_max / self.W
-        self.P_max = self.aL * self.NL * pow(self.FL, 3) + self.aH * self.NH * pow(self.FH, 3)
-        self.N_max = min(self.C_max, (self.max_m - 1))
-        self.E_max = self.P_max * (self.N_max * self.W / self.C_max) + self.P_TX * 1
+        self.C_max = np.zeros(self.n)
+        self.P_max = np.zeros(self.n)
+
+        for i in range(self.n):
+            self.C_max[i] = (self.NL[i] * self.FL[i] + self.NH[i] * self.FH[i]) / self.W
+            self.P_max[i] = self.aL[i] * self.NL[i] * self.FL[i] ** 3 + self.aH[i] * self.NH[i] * self.FH[i] ** 3
 
         self.t_step = 0
         self.ls = np.zeros((5002, self.n + 1))
@@ -133,44 +138,55 @@ class Mec_co_1(gym.Env):
 
     def step(self, action, var):
 
-        C_0, P_0 = choose_epsilon(action, self.C_max, self.P_max)
+        C_0, P_0 = choose_epsilon(action, self.n, self.C_max, self.P_max)
+
         # 需要重新检查理清action
+        for i in range(self.n):
+            for j in range(self.n):
+                if i == j:
+                    if action[i][i] > C_0[i]:
+                        action[i][i] = C_0[i] // 1
+                else:
+                    if action[i][j] > self.state[i][j+self.n]//self.D:
+                        action[i][j] = self.state[i][j+self.n]//self.D  # TODO
 
-        if action[0] > C_0:
-            action[0] = C_0//1  # TODO
-
-        for i in range(1, self.n+1):
-            if action[i] > self.state[i+self.n]//self.D:
-                action[i] = self.state[i+self.n]//self.D
-
-        for i in range(1, self.n+1):
-            self.ls[self.t_step][i] = action[i]
-        self.ls[self.t_step][0] = self.state[2*self.n+1] - sum(action) + action[0]
-        self.t_step += 1
+        # for i in range(1, self.n+1):
+        #     self.ls[self.t_step][i] = action[i]
+        # self.ls[self.t_step][0] = self.state[2*self.n+1] - sum(action) + action[0]
+        # self.t_step += 1
 
         # reward的计算
-        E_0 = 0
-        if C_0 != 0:
-            E_0 = action[0] / (C_0+0.0) * P_0     # 要确认非整除   TODO 应该是要执行的任务/每个任务消耗的时间
-        T = 0
-        for i in range(1, self.n+1):
-            T += action[i] / (self.state[i+self.n]/self.D + 0.0)
-        E_off = T * self.P_TX
-        E = E_0 + E_off
+        E = np.zeros(self.n)
+        for i in range(self.n):
+            E_0 = 0
+            if C_0[i] != 0:
+                E_0 = action[i][i] / (C_0[i]+0.0) * P_0[i]     # 要确认非整除   TODO 应该是要执行的任务/每个任务消耗的时间
+            t_T = 0
+            t_R = 0
+            for j in range(self.n):
+                t_T += action[i][j] / (self.state[i][j+self.n]/self.D + 0.0)
+                t_R += action[j][i] / (self.state[i][j+self.n]/self.D + 0.0)   # TODO 接收任务是否要受到时间限制。
+            E[i] = E_0 + t_T * self.P_TX + t_R * self.P_RX
 
-        # 记录本次执行的数量。
-        exe = np.zeros(self.n+1)
+        # # 记录本次执行的数量。
+        # exe = np.zeros(self.n+1)
 
         # state的更新
-        L = self.state[2 * self.n + 1]
-        x = sum(action)
-        self.state[0] = self.state[0] - x + L  # TODO
-        exe[0] = action[0]
+        # 执行
+        for i in range(self.n):
+            L = self.state[i][2 * self.n]
+            x = sum(action[i])
+            self.state[i][i] = self.state[i][i] - x + L  # TODO
+            # exe[0] = action[0]
 
-        for i in range(1, self.n+1):
-            x = min(self.state[i], self.C[i-1])
-            self.state[i] = self.state[i] - x + action[i]
-            exe[i] = x
+        # 卸载        TODO 直接通过矩阵运算可能会节省很多时间
+        s_Q = np.zeros(self.n)
+        for i in range(self.n):
+            for j in range(self.n):
+                self.state[i][i] += action[j][i]
+            s_Q[i] = self.state[i][i]
+        for i in range(self.n):
+            self.state[i][:self.n] = s_Q.copy()
 
         # 载入文件 TODO
         if mode == 1:
@@ -247,12 +263,12 @@ class Mec_co_1(gym.Env):
         #                  self.state[9], self.state[10], self.state[11]))
         #     f.close()
 
-        return self.state, reward, False, {}, E, drop
+        return self.state, reward, False, {}, E, Q
 
     def reset(self, d):
-
         # 载入文件
         self.D = d
+        self.net = np.zeros((self.n, self.n))
         if mode == 1:
             with open("test-%d.txt" % self.lamda, "r") as f:
                 self.test = f.readlines()
@@ -287,16 +303,19 @@ class Mec_co_1(gym.Env):
             self.viewer = None
 
 
-def choose_epsilon(u, c_max, p_max):
-    if u/c_max > 0.75:
-        epsilon = 1.0
-    else:
-        if u/c_max <= 1:
-            epsilon = 0.5
+def choose_epsilon(u, n, c_max, p_max):
+    P = np.zeros(n)
+    C = np.zeros(n)
+    for i in range(n):
+        if u[i][i]/c_max[i] > 0.75:
+            epsilon = 1.0
         else:
-            epsilon = 0.75
-    P = pow(epsilon, 3) * p_max
-    C = c_max * epsilon
+            if u[i][i]/c_max[i] <= 1:
+                epsilon = 0.5
+            else:
+                epsilon = 0.75
+        P[i] = pow(epsilon, 3) * p_max[i]
+        C[i] = c_max[i] * epsilon
     return C, P
 
 
