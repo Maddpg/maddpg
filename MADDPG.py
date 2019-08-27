@@ -83,7 +83,7 @@ class DDPG(object):
     def get_q(self, s, a):
         return self.sess.run(self.q, {self.a: a, self.S: s[np.newaxis, :]})
 
-    def learn(self, n_t):                # TODO
+    def learn(self):                # TODO
         indices = np.random.choice(min(self.pointer, MEMORY_CAPACITY), size=BATCH_SIZE)
         bt = self.memory[indices, :]
         bs = bt[:, :self.s_dim]
@@ -129,107 +129,101 @@ env.seed(1)
 s_dim = env.observation_space.shape[0]
 a_dim = env.action_space.shape[0]
 a_bound = env.action_space.high
-ddpg = DDPG(a_dim, s_dim, a_bound)
+agents = []
+for i in range(env.n):
+    agents.append(DDPG(a_dim, s_dim, a_bound))
+    agents[i].sess.run(tf.global_variables_initializer())
+    agents[i].memory = np.zeros((MEMORY_CAPACITY, s_dim * 2 + a_dim + 1), dtype=np.float32)
+    agents[i].pointer = 0
 
+# if OUTPUT_GRAPH:
+#     tf.summary.FileWriter("logs/", ddpg.sess.graph)
 
-D_list = [1.0]
-for d in D_list:
+var = 5  # control exploration TODO
+var_t = 0
+v_t = 0
 
-    ddpg.sess.run(tf.global_variables_initializer())
-    ddpg.memory = np.zeros((MEMORY_CAPACITY, s_dim * 2 + a_dim + 1), dtype=np.float32)
-    ddpg.pointer = 0
+k = 1
 
-    # if OUTPUT_GRAPH:
-    #     tf.summary.FileWriter("logs/", ddpg.sess.graph)
+test = 0
+t1 = time.time()
+# ddpg.saver.restore(ddpg.sess, './model/all/DDPG-RA-KNN-3-10')
 
-    var = 5  # control exploration TODO
-    var_t = 0
-    v_t = 0
+num_epi = 0
+max_r = 0
+for i in range(MAX_EPISODES):
+    obs_n = env.reset().copy()
+    arri = 0
+    map(lambda tt: tt.ini(s), agents)
+    ep_reward = [0.0]
+    agent_reward = [[0.0] for _ in range(env.n)]
+    ep_energy = [0.0]
+    ep_queue = [0]
+    for j in range(MAX_EP_STEPS):
+        if RENDER:
+            env.render()
 
-    k = 1
+        if np.random.uniform(0, 5) > var:     # 重新改变探索策略 TODO
+            action_n = [agent.choose_action(obs) for agent, obs in zip(agents, obs_n)]
+        else:
+            action_n = np.random.randint(16807, env.n)
+            times = 0
+            while not env.is_excu_a(action_n):
+                times += 1
+                action_n = np.random.randint(16807, env.n)
+                if times == 10000:
+                    action_n = np.zeros(env.n)
 
-    test = 0
-    t1 = time.time()
-    # ddpg.saver.restore(ddpg.sess, './model/all/DDPG-RA-KNN-3-10')
+        new_obs_n, r_n, done, info, e_n, q_n = env.step(action_n, 0)
 
-    num_epi = 0
-    max_r = 0
-    for i in range(MAX_EPISODES):
-        s = env.reset(d).copy()
-        arri = 0
-        ddpg.ini(s)
-        ep_reward = 0
-        ep_energy = 0
-        ep_queue = 0
-        for j in range(MAX_EP_STEPS):
-            if RENDER:
-                env.render()
+        if test != 1:
+            for p, agent in enumerate(agents):
+                agent.store_transition(obs_n[p], action_n[p], r_n[p], new_obs_n[p])
+                if agent.pointer > MEMORY_CAPACITY:
+                    agent.learn()
+                arri += obs_n[p][2 * env.n]
 
-            if np.random.uniform(0, 5) > var:     # 重新改变探索策略 TODO
-                a = ddpg.choose_action(s)
-            else:
-                a = np.random.randint(117649)
-                times = 0
-                while not env.is_excu_a(a):
-                    times += 1
-                    a = np.random.randint(117649)
-                    if times == 10000:
-                        a = np.zeros(1)
+        obs_n = new_obs_n.copy()
 
-            s_, r, done, info, e, q = env.step(a, 0)
+        for p, r, e, q in enumerate(zip(r_n, e_n, q_n)):
+            ep_reward[-1] += r
+            agent_reward[p][-1] += r
+            ep_energy[-1] += e
+            ep_queue[-1] += q
 
-            # if s_[0] > 1000:
-            #     break
-
-            if test != 1:
-                ddpg.store_transition(s, a, r, s_)
-
-                if ddpg.pointer > MEMORY_CAPACITY:
-                    Not_terminal = [1]
-                    if j > MAX_EP_STEPS-100:
-                        Not_terminal = [0]
-                    ddpg.learn(Not_terminal)
-
-            arri += s[2*env.n+1]
-            s = s_.copy()
-            ep_reward += r
-            ep_energy += e
-            ep_queue += q
-            # print(r)
-
-            if j == MAX_EP_STEPS-1:
-                f = open("DDPG-RA-%0.1f.txt" % d, "a")
-                f.write("%0.2f %d \n" % (ep_reward, i))
+        if j == MAX_EP_STEPS-1:
+            f = open("DDPG-RA-%0.1f.txt" % d, "a")
+            f.write("%0.2f %d \n" % (ep_reward, i))
+            f.close()
+            if var < 5:
+                f = open("episode-%0.1f.txt" % d, "a")
+                f.write("%0.2f %0.2f %d %d\n" % (ep_reward, ep_energy, ep_queue, arri))
                 f.close()
-                if var < 5:
-                    f = open("episode-%0.1f.txt" % d, "a")
-                    f.write("%0.2f %0.2f %d %d\n" % (ep_reward, ep_energy, ep_queue, arri))
-                    f.close()
-                print('Episode:', i, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, 'test: ', test, ' arriv: ', arri)
-                # if ep_reward > -10:
-                #     sys.exit(0)
-                break
+            print('Episode:', i, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, 'test: ', test, ' arriv: ', arri)
+            # if ep_reward > -10:
+            #     sys.exit(0)
+            break
 
-        num_epi += 1
+    num_epi += 1
 
-        # if test != 0:
-        #     v_t = test
-        # test = abs(test - v_t)
+    # if test != 0:
+    #     v_t = test
+    # test = abs(test - v_t)
 
-        # if var != 0:
-        #     var_t = var
-        # var = abs(var - var_t)  # decay the action randomness  TODO
+    # if var != 0:
+    #     var_t = var
+    # var = abs(var - var_t)  # decay the action randomness  TODO
 
-        if num_epi >= 15:
-            var -= 0.5
-            # test = 1
-            if var < 0:
-                var = 0
-            num_epi = 0
+    if num_epi >= 15:
+        var -= 0.5
+        # test = 1
+        if var < 0:
+            var = 0
+        num_epi = 0
 
-        if ep_reward > max_r:
-            max_r = ep_reward
-            print("-------------------------------------\n-----------------------------------")
-            ddpg.saver.save(ddpg.sess, './model/all/DDPG-RA-KNN-3-1-lambda5')
-    print('Running time: ', time.time() - t1)
+    if ep_reward > max_r:
+        max_r = ep_reward
+        print("-------------------------------------\n-----------------------------------")
+        ddpg.saver.save(ddpg.sess, './model/all/DDPG-RA-KNN-3-1-lambda5')
+print('Running time: ', time.time() - t1)
 
