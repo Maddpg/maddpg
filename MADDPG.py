@@ -83,6 +83,9 @@ class DDPG(object):
     def get_q(self, s, a):
         return self.sess.run(self.q, {self.a: a, self.S: s[np.newaxis, :]})
 
+    def get_a(self, s):
+        return self.sess.run(self.a, {self.S: s})
+
     def learn(self):                # TODO
         indices = np.random.choice(min(self.pointer, MEMORY_CAPACITY), size=BATCH_SIZE)
         bt = self.memory[indices, :]
@@ -94,13 +97,27 @@ class DDPG(object):
 
         self.sess.run(self.atrain, {self.S: bs})
 
-        self.sess.run(self.ctrain, {self.S: bs, self.a: ba, self.R: br, self.S_: bs_, self.not_terminal: n_t})
+        self.sess.run(self.ctrain, {self.S: bs, self.a: ba, self.R: br, self.S_: bs_, self.not_terminal: 1})
+
+    def learn_actor(self, s, a):
+        self.sess.run(self.atrain, {self.S: s, self.a: a})
+
+    def learn_critic(self, s, a, r, s_):
+        self.sess.run(self.ctrain, {self.S: s, self.a: a, self.R: r, self.S_: s_})
 
     def store_transition(self, s, a, r, s_):
         transition = np.hstack((s, a, [r], s_))
         index = self.pointer % MEMORY_CAPACITY  # replace the old memory with new memory
         self.memory[index, :] = transition
         self.pointer += 1
+
+    def get_exp(self, indices):
+        bt = self.memory[indices, :]
+        bs = bt[:, :self.s_dim]
+        ba = bt[:, self.s_dim: self.s_dim + self.a_dim]
+        br = bt[:, -self.s_dim - 1: -self.s_dim]
+        bs_ = bt[:, -self.s_dim:]
+        return bs, ba, br, bs_
 
     def _build_a(self, s, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
@@ -136,9 +153,6 @@ for i in range(env.n):
     agents[i].memory = np.zeros((MEMORY_CAPACITY, s_dim * 2 + a_dim + 1), dtype=np.float32)
     agents[i].pointer = 0
 
-# if OUTPUT_GRAPH:
-#     tf.summary.FileWriter("logs/", ddpg.sess.graph)
-
 var = 5  # control exploration TODO
 var_t = 0
 v_t = 0
@@ -149,16 +163,40 @@ test = 0
 t1 = time.time()
 # ddpg.saver.restore(ddpg.sess, './model/all/DDPG-RA-KNN-3-10')
 
+
+def all_learn(agents):
+    indices = np.random.choice(MEMORY_CAPACITY, size=BATCH_SIZE)
+    s_n = []
+    a_n = []
+    r_n = []
+    s__n = []
+
+    for agent in agents:
+        s, a, r, s_ = agent.get_exp(indices)
+        s_n.append(s)
+        a_n.append(a)
+        r_n.append(r)
+        s__n.append(s_)
+
+    for p, agent in enumerate(agents):
+        agent.learn_critic(s_n, a_n, r_n[p], s__n)
+
+    actor_a = [agent.get_a(s_n[p]) for p, agent in enumerate(agents)]
+
+    for agent in agents:
+        agent.learn_actor(s_n, actor_a)
+
+
 num_epi = 0
 max_r = 0
 for i in range(MAX_EPISODES):
     obs_n = env.reset().copy()
     arri = 0
-    map(lambda tt: tt.ini(s), agents)
-    ep_reward = [0.0]
-    agent_reward = [[0.0] for _ in range(env.n)]
-    ep_energy = [0.0]
-    ep_queue = [0]
+    map(lambda tt, s: tt.ini(s), zip(agents, obs_n))
+    ep_reward = 0.0
+    agent_reward = [0.0 for _ in range(env.n)]
+    ep_energy = 0.0
+    ep_queue = 0
     for j in range(MAX_EP_STEPS):
         if RENDER:
             env.render()
@@ -179,17 +217,19 @@ for i in range(MAX_EPISODES):
         if test != 1:
             for p, agent in enumerate(agents):
                 agent.store_transition(obs_n[p], action_n[p], r_n[p], new_obs_n[p])
-                if agent.pointer > MEMORY_CAPACITY:
-                    agent.learn()
                 arri += obs_n[p][2 * env.n]
+
+            if j % 50 == 0:
+                if all(list(map(lambda tt: tt.pointer > MEMORY_CAPACITY, agents))):
+                    all_learn(agents)
 
         obs_n = new_obs_n.copy()
 
         for p, r, e, q in enumerate(zip(r_n, e_n, q_n)):
-            ep_reward[-1] += r
-            agent_reward[p][-1] += r
-            ep_energy[-1] += e
-            ep_queue[-1] += q
+            ep_reward += r
+            agent_reward[p] += r
+            ep_energy += e
+            ep_queue += q
 
         if j == MAX_EP_STEPS-1:
             f = open("DDPG-RA-%0.1f.txt" % d, "a")
@@ -226,4 +266,6 @@ for i in range(MAX_EPISODES):
         print("-------------------------------------\n-----------------------------------")
         ddpg.saver.save(ddpg.sess, './model/all/DDPG-RA-KNN-3-1-lambda5')
 print('Running time: ', time.time() - t1)
+
+
 
