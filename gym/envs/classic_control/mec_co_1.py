@@ -37,15 +37,6 @@ class Mec_co_1(gym.Env):
         self.D = 1.0
         self.C_delta = 1
 
-        # self.C = np.random.randint(2, 5, self.n)      # 动态变换？
-        self.C = np.ones(self.n) * 10
-        self.C[0] = 8 * self.C_delta
-        self.C[1] = 10 * self.C_delta
-        self.C[2] = 12 * self.C_delta
-        self.C[3] = 9 * self.C_delta
-        self.C[4] = 11 * self.C_delta
-        self.C = self.C // self.W
-
         self.P_TX = 0.25
         self.P_RX = 0.25
 
@@ -75,10 +66,10 @@ class Mec_co_1(gym.Env):
         self.state = np.zeros((self.n, 2*self.n+1))
         self.de_q = 0
 
-        low = np.zeros(2*self.n+2)
-        high = np.ones(2*self.n+2)*self.max_m  # TODO 想一下0和上限问题
+        low = np.zeros(2*self.n+1)
+        high = np.ones(2*self.n+1)*self.max_m  # TODO 想一下0和上限问题
 
-        self.action_space = spaces.Box(low=np.zeros(self.n+1), high=np.ones(self.n+1)*self.max_m, dtype=np.float32)
+        self.action_space = spaces.Box(low=np.zeros(self.n), high=np.ones(self.n)*self.max_m, dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         self.seed()
@@ -116,10 +107,10 @@ class Mec_co_1(gym.Env):
     #                                             return list_a
     #     return list_a
 
-    def is_excu_a(self, a):
-        limit = self.state[2 * self.n + 1]
+    def is_excu_a(self, p, a):
+        limit = self.state[p][2 * self.n]
         rest = sum(a) - limit
-        if (rest - a[0] <= 0) and (rest <= self.state[0]):
+        if (rest - a[0] <= 0) and (rest <= self.state[p][p]):
             return True
         return False
 
@@ -164,8 +155,9 @@ class Mec_co_1(gym.Env):
             t_T = 0
             t_R = 0
             for j in range(self.n):
-                t_T += action[i][j] / (self.state[i][j+self.n]/self.D + 0.0)
-                t_R += action[j][i] / (self.state[i][j+self.n]/self.D + 0.0)   # TODO 接收任务是否要受到时间限制。
+                if j != i:
+                    t_T += action[i][j] / (self.state[i][j+self.n]/self.D + 0.0)
+                    t_R += action[j][i] / (self.state[i][j+self.n]/self.D + 0.0)
             E[i] = E_0 + t_T * self.P_TX + t_R * self.P_RX
 
         # # 记录本次执行的数量。
@@ -183,7 +175,8 @@ class Mec_co_1(gym.Env):
         s_Q = np.zeros(self.n)
         for i in range(self.n):
             for j in range(self.n):
-                self.state[i][i] += action[j][i]
+                if i != j:
+                    self.state[i][i] += action[j][i]
             s_Q[i] = self.state[i][i]
         for i in range(self.n):
             self.state[i][:self.n] = s_Q.copy()
@@ -198,18 +191,18 @@ class Mec_co_1(gym.Env):
             arr_t = np.random.poisson(self.lamda, self.n)
             for i in range(self.n):
                 for j in range(i + 1, self.n):
-                    self.net[i][j] = random.randint(low=self.net_speed_min, high=self.net_speed_max + 1)
+                    self.net[i][j] = random.randint(self.net_speed_min, self.net_speed_max + 1)
                     self.net[j][i] = self.net[i][j]
 
         for i in range(self.n):
-            self.state[i][self.n:2*self.n-1] = self.net[i]
+            self.state[i][self.n:2*self.n] = self.net[i]
             self.state[i][2*self.n] = arr_t[i]
 
         # 时延的计算
         # Q = np.zeros(self.n)
         # for i in range(self.n):
         #     Q[i] = self.state[0][i]
-        Q = self.state[0][:self.n]
+        Q = sum(s_Q)
 
         # 计算任务完成情况并计算收益
         # ut = 0
@@ -265,9 +258,8 @@ class Mec_co_1(gym.Env):
 
         return self.state, reward, False, {}, E, Q
 
-    def reset(self, d):
+    def reset(self):
         # 载入文件
-        self.D = d
         self.net = np.zeros((self.n, self.n))
         if mode == 1:
             with open("test-%d.txt" % self.lamda, "r") as f:
@@ -280,13 +272,13 @@ class Mec_co_1(gym.Env):
             arr_t = np.random.poisson(self.lamda, self.n)
             for i in range(self.n):
                 for j in range(i+1, self.n):
-                    self.net[i][j] = random.randint(low=self.net_speed_min, high=self.net_speed_max+1)
+                    self.net[i][j] = random.randint(self.net_speed_min, self.net_speed_max+1)
                     self.net[j][i] = self.net[i][j]
 
         self.state = np.zeros((self.n, 2*self.n+1))
 
         for i in range(self.n):
-            self.state[i][self.n:2*self.n-1] = self.net[i]
+            self.state[i][self.n:2*self.n] = self.net[i]
             self.state[i][2*self.n] = arr_t[i]
         # self.ls = np.zeros((5002, self.n+1))
         # self.task = np.zeros(self.n+1)
