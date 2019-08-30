@@ -28,8 +28,8 @@ ENV_NAME = 'CO-v0'  # TODO
 
 
 class DDPG(object):
-    def __init__(self, a_dim, s_dim, o_dim, a_bound):
-        self.memory = np.zeros((MEMORY_CAPACITY, s_dim * 2 + a_dim + 1), dtype=np.float32)
+    def __init__(self, a_dim, o_dim, a_bound):
+        self.memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
         self.pointer = 0
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
@@ -38,15 +38,15 @@ class DDPG(object):
 
         self.sess = tf.Session(config=config)
 
-        self.a_dim, self.s_dim, self.o_dim, self.a_bound = a_dim, s_dim, o_dim, a_bound,
+        self.a_dim, self.o_dim, self.a_bound = a_dim, o_dim, a_bound,
 
         self.O = tf.placeholder(tf.float32, [None, o_dim])
-        self.a_n = tf.placeholder(tf.float32, [None, [env.n, a_dim]])
-        self.S = tf.placeholder(tf.float32, [None, s_dim], 's')
+        self.a_n = tf.placeholder(tf.float32, [None, env.n-1, a_dim])
+        self.S = tf.placeholder(tf.float32, [None, env.n, o_dim], 's')
 
         self.O_ = tf.placeholder(tf.float32, [None, o_dim])
-        self.a_n_ = tf.placeholder(tf.float32, [None, [env.n, a_dim]])
-        self.S_ = tf.placeholder(tf.float32, [None, s_dim], 's_')
+        self.a_n_ = tf.placeholder(tf.float32, [None, env.n-1, a_dim])
+        self.S_ = tf.placeholder(tf.float32, [None, env.n, o_dim], 's_')
 
         self.R = tf.placeholder(tf.float32, [None, 1], 'r')
 
@@ -54,7 +54,7 @@ class DDPG(object):
 
         # 建立预测AC网络
         self.a = self._build_a(self.O,)
-        self.q = self._build_c(self.S, self.a_n,)
+        self.q = self._build_c(self.S, self.a_n, self.a[:, np.newaxis, :],)
 
         # 利用滑动平均建立targetAC网络
         a_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Actor')
@@ -66,9 +66,9 @@ class DDPG(object):
 
         target_update = [ema.apply(a_params), ema.apply(c_params)]      # soft update operation
         self.a_ = self._build_a(self.O_, reuse=True, custom_getter=ema_getter)   # replaced target parameters
-        q_ = self._build_c(self.S_, self.a_n_, reuse=True, custom_getter=ema_getter)
+        q_ = self._build_c(self.S_, self.a_n_, self.a_[:, np.newaxis, :], reuse=True, custom_getter=ema_getter)
 
-        self.a_loss = - tf.reduce_mean(self.q)  # maximize the q
+        self.a_loss = - tf.reduce_mean(self.q, 2)  # maximize the q
         self.atrain = tf.train.AdamOptimizer(LR_A).minimize(self.a_loss, var_list=a_params)
 
         with tf.control_dependencies(target_update):    # soft replacement happened at here
@@ -88,16 +88,18 @@ class DDPG(object):
         return self.sess.run(self.q, {self.a: a, self.S: s[np.newaxis, :]})
 
     def get_a(self, s):
-        return self.sess.run(self.a, {self.S: s})
+        return self.sess.run(self.a, {self.O: s})
 
     def get_a_(self, s):
-        return self.sess.run(self.a, {self.S_: s})
+        return self.sess.run(self.a_, {self.O_: s})
 
-    def learn_actor(self, s, a):
-        self.sess.run(self.atrain, {self.S: s, self.a: a})
+    def learn_actor(self, s, a_n, o):
+        self.sess.run(self.atrain, {self.S: s, self.a_n: a_n, self.O: o})
 
-    def learn_critic(self, s, a, r, s_, a_):
-        self.sess.run(self.ctrain, {self.S: s, self.a_n: a, self.R: r, self.S_: s_, self.a_n_: a_})
+    def learn_critic(self, s, a_n, a, r, s_, a_n_, a_, n_t):
+        self.sess.run(self.ctrain, {self.S: s, self.a_n: a_n, self.a: a, self.R: r,
+                                    self.S_: s_, self.a_n_: a_n_, self.a_: a_,
+                                    self.not_terminal: n_t})
 
     def store_transition(self, s, a, r, s_):
         transition = np.hstack((s, a, [r], s_))
@@ -120,15 +122,23 @@ class DDPG(object):
             a = tf.layers.dense(net, a_dim, activation=tf.nn.sigmoid, name='e', trainable=trainable)
             return a
 
-    def _build_c(self, s, a, reuse=None, custom_getter=None):
+    def _build_c(self, s, a_n, a, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
         with tf.variable_scope('Critic', reuse=reuse, custom_getter=custom_getter):
-            n_l1 = 30
-            w1_s = tf.get_variable('w1_s', [self.s_dim, n_l1], trainable=trainable)
-            w1_a = tf.get_variable('w1_a', [self.a_dim, n_l1], trainable=trainable)
-            b1 = tf.get_variable('b1', [1, n_l1], trainable=trainable)
-            net = tf.nn.relu(tf.matmul(s, w1_s) + tf.matmul(a, w1_a, transpose_a=False) + b1)
-            return tf.layers.dense(net, 1, trainable=trainable)  # Q(s,a)
+            input_sa = tf.concat((s, tf.concat((a_n, a), axis=1)), axis=2)
+            net = tf.layers.dense(input_sa, 30, activation=tf.nn.relu, name='l2', trainable=trainable)
+            qsa = tf.layers.dense(net, 1, activation=tf.nn.relu, name='r', trainable=trainable)
+            return qsa  # Q(s,a)
+
+    # def _build_c(self, s, a, reuse=None, custom_getter=None):
+    #     trainable = True if reuse is None else False
+    #     with tf.variable_scope('Critic', reuse=reuse, custom_getter=custom_getter):
+    #         n_l1 = 30
+    #         w1_s = tf.get_variable('w1_s', [env.n, o_dim, n_l1], trainable=trainable)
+    #         w1_a = tf.get_variable('w1_a', [self.a_dim, n_l1], trainable=trainable)
+    #         b1 = tf.get_variable('b1', [1, n_l1], trainable=trainable)
+    #         net = tf.nn.relu(tf.matmul(s, w1_s) + tf.matmul(a, w1_a, transpose_a=False) + b1)
+    #         return tf.layers.dense(net, 1, trainable=trainable)  # Q(s,a)
 
 
 ###############################  training  ####################################
@@ -138,14 +148,13 @@ env = env.unwrapped
 env.seed(1)
 
 o_dim = env.observation_space.shape[0]
-s_dim = [env.n, o_dim]
 a_dim = env.action_space.shape[0]
 a_bound = env.action_space.high
 agents = []
 for i in range(env.n):
-    agents.append(DDPG(a_dim, s_dim, o_dim, a_bound))
+    agents.append(DDPG(a_dim, o_dim, a_bound))
     agents[i].sess.run(tf.global_variables_initializer())
-    agents[i].memory = np.zeros((MEMORY_CAPACITY, s_dim * 2 + a_dim + 1), dtype=np.float32)
+    agents[i].memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
     agents[i].pointer = 0
 
 var = 5  # control exploration TODO
@@ -158,29 +167,38 @@ t1 = time.time()
 # ddpg.saver.restore(ddpg.sess, './model/all/DDPG-RA-KNN-3-10')
 
 
-def all_learn(agents):
+def all_learn(agents, nt):
     indices = np.random.choice(MEMORY_CAPACITY, size=BATCH_SIZE)
-    s_n = []
-    a_n = []
-    r_n = []
-    s__n = []
-
-    for agent in agents:
-        s, a, r, s_ = agent.get_exp(indices)
-        s_n.append(s)
-        a_n.append(a)
-        r_n.append(r)
-        s__n.append(s_)
-
-    actor_a = [agent.get_a_(s__n[p]) for p, agent in enumerate(agents)]
+    s_n = np.zeros((env.n, BATCH_SIZE, o_dim))
+    a_n = np.zeros((env.n, BATCH_SIZE, a_dim))
+    r_n = np.zeros((env.n, BATCH_SIZE, 1))
+    s__n = np.zeros((env.n, BATCH_SIZE, o_dim))
 
     for p, agent in enumerate(agents):
-        agent.learn_critic(s_n, a_n, r_n[p], s__n, actor_a)
+        s, a, r, s_ = agent.get_exp(indices)
+        s_n[p] = s
+        a_n[p] = a
+        r_n[p] = r
+        s__n[p] = s_
+
+    actor_a_ = np.array([agent.get_a_(s__n[p]) for p, agent in enumerate(agents)])
+
+    for p, agent in enumerate(agents):
+        act = a_n[p].copy()
+        act_n = a_n.copy()
+        act_n = np.delete(act_n, p, 0)
+
+        act_ = actor_a_[p].copy()
+        act_n_ = actor_a_.copy()
+        act_n_ = np.delete(act_n_, p, 0)
+
+        agent.learn_critic(s_n.swapaxes(1, 0), act_n.swapaxes(1, 0), act, r_n[p], s__n.swapaxes(1, 0),
+                           act_n_.swapaxes(1, 0), act_, nt)
 
     actor_a = [agent.get_a(s_n[p]) for p, agent in enumerate(agents)]
 
-    for agent in agents:
-        agent.learn_actor(s_n, actor_a)
+    for p, agent in enumerate(agents):
+        agent.learn_actor(s_n, actor_a, s_n[p])
 
 
 num_epi = 0
@@ -200,10 +218,10 @@ for i in range(MAX_EPISODES):
             action_n = [agent.choose_action(obs) for agent, obs in zip(agents, obs_n)]
         else:
             action_n = []
-            for obs in obs_n:
+            for p in range(env.n):
                 a = np.random.randint(0, env.max_m, env.n)
                 times = 0
-                while not env.is_excu_a(obs, a):
+                while not env.is_excu_a(p, a):
                     times += 1
                     a = np.random.randint(0, env.max_m, env.n)
                     if times == 10000:
@@ -219,11 +237,12 @@ for i in range(MAX_EPISODES):
 
             if j % 50 == 0:
                 if all(list(map(lambda tt: tt.pointer > MEMORY_CAPACITY, agents))):
-                    all_learn(agents)
+                    nt = [0] if j == MAX_EP_STEPS - 1 else [1]
+                    all_learn(agents, nt)
 
         obs_n = new_obs_n.copy()
 
-        for p, r, e, q in enumerate(zip(r_n, e_n, q_n)):
+        for p, (r, e, q) in enumerate(zip(r_n, e_n, q_n)):
             ep_reward += r
             agent_reward[p] += r
             ep_energy += e
@@ -262,8 +281,8 @@ for i in range(MAX_EPISODES):
     if ep_reward > max_r:
         max_r = ep_reward
         print("-------------------------------------\n-----------------------------------")
-        for agent in agents:
-            agent.saver.save(agent.sess, './model/all/multi-agent-n=5')
+        for p, agent in enumerate(agents):
+            agent.saver.save(agent.sess, './model/all/agent[%d]-n=5' % p)
 print('Running time: ', time.time() - t1)
 
 

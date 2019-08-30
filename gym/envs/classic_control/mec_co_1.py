@@ -202,7 +202,7 @@ class Mec_co_1(gym.Env):
         # Q = np.zeros(self.n)
         # for i in range(self.n):
         #     Q[i] = self.state[0][i]
-        Q = sum(s_Q)
+        Q = s_Q.copy()
 
         # 计算任务完成情况并计算收益
         # ut = 0
