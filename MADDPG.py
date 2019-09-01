@@ -33,7 +33,7 @@ class DDPG(object):
         self.memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
         self.pointer = 0
         self.index = index
-        tf.reset_default_graph()
+        # tf.reset_default_graph()
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         config.allow_soft_placement = True
@@ -59,8 +59,8 @@ class DDPG(object):
         self.q = self._build_c(self.S, self.a_n, self.a[:, np.newaxis, :],)
 
         # 利用滑动平均建立targetAC网络
-        a_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Actor')
-        c_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Critic')
+        a_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Actor-%d' % self.index)
+        c_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Critic-%d' % self.index)
         ema = tf.train.ExponentialMovingAverage(decay=1 - TAU)          # soft replacement
 
         def ema_getter(getter, name, *args, **kwargs):
@@ -86,8 +86,8 @@ class DDPG(object):
         x = self.sess.run(self.a, {self.O: s[np.newaxis, :]})
         return x
 
-    def get_q(self, s, a):
-        return self.sess.run(self.q, {self.a: a, self.S: s[np.newaxis, :]})
+    def get_q(self, s, a_n, a):
+        return self.sess.run(self.q, {self.S: s, self.a_n: a_n, self.a: a})
 
     def get_a(self, s):
         return self.sess.run(self.a, {self.O: s})
@@ -129,18 +129,8 @@ class DDPG(object):
         with tf.variable_scope('Critic-%d' % self.index, reuse=reuse, custom_getter=custom_getter):
             input_sa = tf.contrib.layers.flatten(tf.concat((s, tf.concat((a_n, a), axis=1)), axis=2))
             net = tf.layers.dense(input_sa, 30, activation=tf.nn.relu, name='l2', trainable=trainable)
-            qsa = tf.layers.dense(net, 1, activation=tf.nn.relu, name='r', trainable=trainable)
+            qsa = tf.layers.dense(net, 1, name='r', trainable=trainable)
             return qsa  # Q(s,a)
-
-    # def _build_c(self, s, a, reuse=None, custom_getter=None):
-    #     trainable = True if reuse is None else False
-    #     with tf.variable_scope('Critic', reuse=reuse, custom_getter=custom_getter):
-    #         n_l1 = 30
-    #         w1_s = tf.get_variable('w1_s', [env.n, o_dim, n_l1], trainable=trainable)
-    #         w1_a = tf.get_variable('w1_a', [self.a_dim, n_l1], trainable=trainable)
-    #         b1 = tf.get_variable('b1', [1, n_l1], trainable=trainable)
-    #         net = tf.nn.relu(tf.matmul(s, w1_s) + tf.matmul(a, w1_a, transpose_a=False) + b1)
-    #         return tf.layers.dense(net, 1, trainable=trainable)  # Q(s,a)
 
 
 ###############################  training  ####################################
@@ -157,7 +147,7 @@ for i in range(env.n):
     agents.append(DDPG(a_dim, o_dim, a_bound, i))
     agents[i].memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
     agents[i].pointer = 0
-    # tf.summary.FileWriter("logs/", agents[i].sess.graph)
+    tf.summary.FileWriter("logs/", agents[i].sess.graph)
 
 var = 5  # control exploration TODO
 var_t = 0
@@ -191,10 +181,10 @@ def all_learn(agents, nt):
 
     for p, agent in enumerate(agents):
         s, a, r, s_ = agent.get_exp(indices)
-        s_n[p] = s
-        a_n[p] = a
-        r_n[p] = r
-        s__n[p] = s_
+        s_n[p] = s.copy()
+        a_n[p] = a.copy()
+        r_n[p] = r.copy()
+        s__n[p] = s_.copy()
 
     actor_a_ = np.array([agent.get_a_(s__n[p]) for p, agent in enumerate(agents)])
 
@@ -215,6 +205,15 @@ def all_learn(agents, nt):
     for p, agent in enumerate(agents):
         act_n = np.delete(actor_a, p, 0)
         agent.learn_actor(s_n.swapaxes(1, 0), act_n.swapaxes(1, 0), s_n[p])
+
+    # obs = np.ones(o_dim)
+    # print(agents[0].choose_action(obs))
+    # print(agents[4].choose_action(obs))
+    # print("____________________________")
+    # s = np.ones((1, env.n, o_dim))
+    # a_n = np.ones((1, env.n-1, a_dim))
+    # a = np.ones((1, a_dim))
+    # print(agents[4].get_q(s, a_n, a))
 
 
 num_epi = 0
@@ -312,7 +311,7 @@ for i in range(MAX_EPISODES):
     #     var_t = var
     # var = abs(var - var_t)  # decay the action randomness  TODO
 
-    if num_epi >= 20:
+    if num_epi >= 10:
         var -= 0.5
         # test = 1
         if var < 0:
