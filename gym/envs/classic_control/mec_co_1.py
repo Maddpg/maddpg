@@ -22,7 +22,7 @@ class Mec_co_1(gym.Env):
 
         self.n = 5  # 基站数（实际考虑action时要考虑md所以是n+1）
         self.max_m = 7   # 最大任务数
-        self.lamda = 10  # slot的平均任务到达
+        self.lamda = 4  # slot的平均任务到达
         self.net_speed_min = 3
         self.net_speed_max = 7   # 最大传输速率 TODO 想要缩小维度
 
@@ -33,7 +33,7 @@ class Mec_co_1(gym.Env):
         self.aL = [0.15625, 0.15625, 0.15625, 0.15625, 0.15625]
         self.aH = [0.15625, 0.15625, 0.15625, 0.15625, 0.15625]
 
-        self.W = 2  # 若改变，注意后续取整问题
+        self.W = 1  # 若改变，注意后续取整问题
         self.D = 1.0
         self.C_delta = 1
 
@@ -110,22 +110,22 @@ class Mec_co_1(gym.Env):
     def is_excu_a(self, p, a):
         limit = self.state[p][2 * self.n]
         rest = sum(a) - limit
-        if (rest - a[0] <= 0) and (rest <= self.state[p][p]):
+        if (rest - a[p] <= 0) and (rest <= self.state[p][p]):
             return True
         return False
 
-    # def find_excu_a(self, s):
-    #     list = []
-    #     limit = self.state[2 * self.n + 1]
-    #     for i in range(int(self.action_space.high)):
-    #         action = turn_to_action(i, self.max_m, self.n)
-    #         rest = sum(action)-limit
-    #         if (rest - action[0] <= 0) and (rest <= self.state[0]):
-    #             list.append(i)
-    #     if list:
-    #         return list
-    #     else:
-    #         return [0]
+    def find_excu_a(self, p):
+        list = []
+        limit = self.state[p][2 * self.n]
+        for i in range(self.max_m ** self.n):
+            action = turn_to_action(i, self.max_m, self.n)
+            rest = sum(action)-limit
+            if (rest - action[p] <= 0) and (rest <= self.state[p][p]):
+                list.append(action)
+        if list:
+            return list
+        else:
+            return [0]
 
     def step(self, action, var):
 
@@ -293,6 +293,14 @@ class Mec_co_1(gym.Env):
         if self.viewer:
             self.viewer.close()
             self.viewer = None
+
+
+def turn_to_action(a, m, n):
+    action = np.zeros(n)
+    for i in range(n):
+        action[i] = a % m
+        a = a // m
+    return action
 
 
 def choose_epsilon(u, n, c_max, p_max):

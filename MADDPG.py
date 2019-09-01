@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import gym
 import time
+import random
 import math
 import sys
 
@@ -16,7 +17,7 @@ LR_C = 0.001    # learning rate for critic
 GAMMA = 0.9     # reward discount  TODO
 TAU = 0.001      # soft replacement
 MEMORY_CAPACITY = 10000
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 
 
 RENDER = False
@@ -28,13 +29,14 @@ ENV_NAME = 'CO-v0'  # TODO
 
 
 class DDPG(object):
-    def __init__(self, a_dim, o_dim, a_bound):
+    def __init__(self, a_dim, o_dim, a_bound, index):
         self.memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
         self.pointer = 0
+        self.index = index
+        tf.reset_default_graph()
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         config.allow_soft_placement = True
-        tf.reset_default_graph()
 
         self.sess = tf.Session(config=config)
 
@@ -68,7 +70,7 @@ class DDPG(object):
         self.a_ = self._build_a(self.O_, reuse=True, custom_getter=ema_getter)   # replaced target parameters
         q_ = self._build_c(self.S_, self.a_n_, self.a_[:, np.newaxis, :], reuse=True, custom_getter=ema_getter)
 
-        self.a_loss = - tf.reduce_mean(self.q, 2)  # maximize the q
+        self.a_loss = - tf.reduce_mean(self.q)  # maximize the q
         self.atrain = tf.train.AdamOptimizer(LR_A).minimize(self.a_loss, var_list=a_params)
 
         with tf.control_dependencies(target_update):    # soft replacement happened at here
@@ -81,7 +83,7 @@ class DDPG(object):
         self.saver = tf.train.Saver()
 
     def choose_action(self, s):
-        x = self.sess.run(self.a, {self.S: s[np.newaxis, :]})
+        x = self.sess.run(self.a, {self.O: s[np.newaxis, :]})
         return x
 
     def get_q(self, s, a):
@@ -117,15 +119,15 @@ class DDPG(object):
 
     def _build_a(self, s, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
-        with tf.variable_scope('Actor', reuse=reuse, custom_getter=custom_getter):
+        with tf.variable_scope('Actor-%d' % self.index, reuse=reuse, custom_getter=custom_getter):
             net = tf.layers.dense(s, 30, activation=tf.nn.relu, name='l1', trainable=trainable)
             a = tf.layers.dense(net, a_dim, activation=tf.nn.sigmoid, name='e', trainable=trainable)
-            return a
+            return a * a_bound
 
     def _build_c(self, s, a_n, a, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
-        with tf.variable_scope('Critic', reuse=reuse, custom_getter=custom_getter):
-            input_sa = tf.concat((s, tf.concat((a_n, a), axis=1)), axis=2)
+        with tf.variable_scope('Critic-%d' % self.index, reuse=reuse, custom_getter=custom_getter):
+            input_sa = tf.contrib.layers.flatten(tf.concat((s, tf.concat((a_n, a), axis=1)), axis=2))
             net = tf.layers.dense(input_sa, 30, activation=tf.nn.relu, name='l2', trainable=trainable)
             qsa = tf.layers.dense(net, 1, activation=tf.nn.relu, name='r', trainable=trainable)
             return qsa  # Q(s,a)
@@ -149,13 +151,13 @@ env.seed(1)
 
 o_dim = env.observation_space.shape[0]
 a_dim = env.action_space.shape[0]
-a_bound = env.action_space.high
+a_bound = env.max_m
 agents = []
 for i in range(env.n):
-    agents.append(DDPG(a_dim, o_dim, a_bound))
-    agents[i].sess.run(tf.global_variables_initializer())
+    agents.append(DDPG(a_dim, o_dim, a_bound, i))
     agents[i].memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
     agents[i].pointer = 0
+    # tf.summary.FileWriter("logs/", agents[i].sess.graph)
 
 var = 5  # control exploration TODO
 var_t = 0
@@ -165,6 +167,19 @@ k = 1
 test = 0
 t1 = time.time()
 # ddpg.saver.restore(ddpg.sess, './model/all/DDPG-RA-KNN-3-10')
+
+
+def get_knn(k, a, a_list):
+    ka_list = a_list.copy()
+    L = []
+    distances = [math.sqrt(np.sum((aa - a) ** 2)) for aa in ka_list]
+    nearest = np.argsort(distances)
+    for i in nearest[:k]:
+        L.append(ka_list[i])
+    if L:
+        return L[0]
+    else:
+        return [0, 0, 0, 0, 0]
 
 
 def all_learn(agents, nt):
@@ -198,24 +213,44 @@ def all_learn(agents, nt):
     actor_a = [agent.get_a(s_n[p]) for p, agent in enumerate(agents)]
 
     for p, agent in enumerate(agents):
-        agent.learn_actor(s_n, actor_a, s_n[p])
+        act_n = np.delete(actor_a, p, 0)
+        agent.learn_actor(s_n.swapaxes(1, 0), act_n.swapaxes(1, 0), s_n[p])
 
 
 num_epi = 0
-max_r = 0
+max_r = -np.inf
 for i in range(MAX_EPISODES):
     obs_n = env.reset().copy()
-    arri = 0
+    arri = [0.0 for _ in range(env.n)]
     ep_reward = 0.0
-    agent_reward = [0.0 for _ in range(env.n)]
     ep_energy = 0.0
     ep_queue = 0
+    agent_reward = [0.0 for _ in range(env.n)]
+    agent_energy = [0.0 for _ in range(env.n)]
+    agent_queue = [0.0 for _ in range(env.n)]
+
     for j in range(MAX_EP_STEPS):
         if RENDER:
             env.render()
 
         if np.random.uniform(0, 5) > var:     # 重新改变探索策略 TODO
-            action_n = [agent.choose_action(obs) for agent, obs in zip(agents, obs_n)]
+            action_n = [np.reshape(agent.choose_action(obs), 5) for agent, obs in zip(agents, obs_n)]
+            # a = np.zeros(env.n)
+            for p in range(env.n):
+                for q in range(env.n):
+                    if action_n[p][q] >= a_bound:
+                        action_n[p][q] -= 1
+                    action_n[p][q] = int(action_n[p][q])
+                #     a[q] = random.randint(-action_n[p][q], env.max_m-action_n[p][q]-1)
+                # times = 0
+                # while not env.is_excu_a(p, action_n[p]+a):
+                #     times += 1
+                #     a = np.array([random.randint(-action_n[p][t], env.max_m-action_n[p][t]-1) for t in range(env.n)])
+                #     if times == 10000:
+                #         a = - action_n[p]
+                # action_n[p] = action_n[p] + a
+                a_list = env.find_excu_a(p)
+                action_n[p] = np.array(get_knn(k, action_n[p], a_list))
         else:
             action_n = []
             for p in range(env.n):
@@ -233,9 +268,9 @@ for i in range(MAX_EPISODES):
         if test != 1:
             for p, agent in enumerate(agents):
                 agent.store_transition(obs_n[p], action_n[p], r_n[p], new_obs_n[p])
-                arri += obs_n[p][2 * env.n]
+                arri[p] += obs_n[p][2 * env.n]
 
-            if j % 50 == 0:
+            if j % 10 == 0:
                 if all(list(map(lambda tt: tt.pointer > MEMORY_CAPACITY, agents))):
                     nt = [0] if j == MAX_EP_STEPS - 1 else [1]
                     all_learn(agents, nt)
@@ -244,18 +279,24 @@ for i in range(MAX_EPISODES):
 
         for p, (r, e, q) in enumerate(zip(r_n, e_n, q_n)):
             ep_reward += r
-            agent_reward[p] += r
             ep_energy += e
             ep_queue += q
+            agent_reward[p] += r
+            agent_energy[p] += e
+            agent_queue[p] += q
 
         if j == MAX_EP_STEPS-1:
             f = open("DDPG-RA-%0.1f.txt" % env.n, "a")
             f.write("%0.2f %d \n" % (ep_reward, i))
             f.close()
-            if var < 5:
+            if var <= 5:
                 f = open("episode-%0.1f.txt" % env.n, "a")
-                f.write("%0.2f %0.2f %d %d\n" % (ep_reward, ep_energy, ep_queue, arri))
+                f.write("%0.2f %0.2f %d %d\n" % (ep_reward, ep_energy, ep_queue, sum(arri)))
                 f.close()
+                for p in range(env.n):
+                    f = open("agent-%d.txt" % p, "a")
+                    f.write("%0.2f %0.2f %d %d\n" % (agent_reward[p], agent_energy[p], agent_queue[p], arri[p]))
+                    f.close()
             print('Episode:', i, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, 'test: ', test, ' arriv: ', arri)
             # if ep_reward > -10:
             #     sys.exit(0)
@@ -271,7 +312,7 @@ for i in range(MAX_EPISODES):
     #     var_t = var
     # var = abs(var - var_t)  # decay the action randomness  TODO
 
-    if num_epi >= 15:
+    if num_epi >= 20:
         var -= 0.5
         # test = 1
         if var < 0:
@@ -281,8 +322,8 @@ for i in range(MAX_EPISODES):
     if ep_reward > max_r:
         max_r = ep_reward
         print("-------------------------------------\n-----------------------------------")
-        for p, agent in enumerate(agents):
-            agent.saver.save(agent.sess, './model/all/agent[%d]-n=5' % p)
+        # for p, agent in enumerate(agents):
+        #     agent.saver.save(agent.sess, './model/all/agent[%d]-n=5' % p)
 print('Running time: ', time.time() - t1)
 
 
