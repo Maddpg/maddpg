@@ -6,27 +6,22 @@ import random
 import math
 import sys
 
-
 #####################  hyper parameters  ####################
 
 MAX_EPISODES = 5000
 MAX_EP_STEPS = 1000
 LR_A = 0.0001    # learning rate for actor
-LR_GF = 0.0003
 LR_C = 0.001    # learning rate for critic
 GAMMA = 0.9     # reward discount  TODO
 TAU = 0.001      # soft replacement
 MEMORY_CAPACITY = 10000
 BATCH_SIZE = 64
 
-
 RENDER = False
 OUTPUT_GRAPH = True
 ENV_NAME = 'CO-v0'  # TODO
 
-
 ###############################  DDPG  ####################################
-
 
 class DDPG(object):
     def __init__(self, a_dim, o_dim, a_bound, index):
@@ -156,8 +151,6 @@ v_t = 0
 k = 1
 test = 0
 t1 = time.time()
-# ddpg.saver.restore(ddpg.sess, './model/all/DDPG-RA-KNN-3-10')
-
 
 def get_knn(k, a, a_list):
     ka_list = a_list.copy()
@@ -206,16 +199,6 @@ def all_learn(agents, nt):
         act_n = np.delete(actor_a, p, 0)
         agent.learn_actor(s_n.swapaxes(1, 0), act_n.swapaxes(1, 0), s_n[p])
 
-    # obs = np.ones(o_dim)
-    # print(agents[0].choose_action(obs))
-    # print(agents[4].choose_action(obs))
-    # print("____________________________")
-    # s = np.ones((1, env.n, o_dim))
-    # a_n = np.ones((1, env.n-1, a_dim))
-    # a = np.ones((1, a_dim))
-    # print(agents[4].get_q(s, a_n, a))
-
-
 num_epi = 0
 max_r = -np.inf
 for i in range(MAX_EPISODES):
@@ -234,20 +217,11 @@ for i in range(MAX_EPISODES):
 
         if np.random.uniform(0, 5) > var:     # 重新改变探索策略 TODO
             action_n = [np.reshape(agent.choose_action(obs), 5) for agent, obs in zip(agents, obs_n)]
-            # a = np.zeros(env.n)
             for p in range(env.n):
                 for q in range(env.n):
                     if action_n[p][q] >= a_bound:
                         action_n[p][q] -= 1
                     action_n[p][q] = int(action_n[p][q])
-                #     a[q] = random.randint(-action_n[p][q], env.max_m-action_n[p][q]-1)
-                # times = 0
-                # while not env.is_excu_a(p, action_n[p]+a):
-                #     times += 1
-                #     a = np.array([random.randint(-action_n[p][t], env.max_m-action_n[p][t]-1) for t in range(env.n)])
-                #     if times == 10000:
-                #         a = - action_n[p]
-                # action_n[p] = action_n[p] + a
                 a_list = env.find_excu_a(p)
                 action_n[p] = np.array(get_knn(k, action_n[p], a_list))
         else:
@@ -297,19 +271,9 @@ for i in range(MAX_EPISODES):
                     f.write("%0.2f %0.2f %d %d\n" % (agent_reward[p], agent_energy[p], agent_queue[p], arri[p]))
                     f.close()
             print('Episode:', i, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, 'test: ', test, ' arriv: ', arri)
-            # if ep_reward > -10:
-            #     sys.exit(0)
             break
 
     num_epi += 1
-
-    # if test != 0:
-    #     v_t = test
-    # test = abs(test - v_t)
-
-    # if var != 0:
-    #     var_t = var
-    # var = abs(var - var_t)  # decay the action randomness  TODO
 
     if num_epi >= 10:
         var -= 0.5
