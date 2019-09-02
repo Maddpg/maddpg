@@ -23,14 +23,18 @@ class Mec_co_1(gym.Env):
         self.n = 5  # 基站数（实际考虑action时要考虑md所以是n+1）
         self.max_m = 7   # 最大任务数
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         self.lamda = 4  # slot的平均任务到达
+=======
+        self.lamda = 5  # slot的平均任务到达
+>>>>>>> Stashed changes
         self.net_speed_min = 3
         self.net_speed_max = 7   # 最大传输速率 TODO 想要缩小维度
 
-        self.NL = [4, 4, 4, 4, 4]
-        self.NH = [0, 0, 0, 0, 0]
-        self.FL = [2, 2, 2, 2, 2]
-        self.FH = [2.5, 2.5, 2.5, 2.5, 2.5]
+        self.NL = [4, 4, 4, 6, 4]
+        self.NH = [4, 4, 4, 2, 2]
+        self.FL = [1.8, 1.7, 1.7, 1.7, 1.6]
+        self.FH = [2.6, 2.9, 2.9, 2, 2.5]
         self.aL = [0.15625, 0.15625, 0.15625, 0.15625, 0.15625]
         self.aH = [0.15625, 0.15625, 0.15625, 0.15625, 0.15625]
 =======
@@ -51,7 +55,7 @@ class Mec_co_1(gym.Env):
         self.C_delta = 1
 
         self.P_TX = 0.25
-        self.P_RX = 0.25
+        self.P_RX = 0.1
 
         self.net = np.zeros((self.n, self.n))
 
