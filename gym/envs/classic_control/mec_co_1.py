@@ -33,7 +33,7 @@ class Mec_co_1(gym.Env):
         self.aL = [0.15, 0.2, 0.2, 0.1, 0.15]
         self.aH = [0.15, 0.2, 0.2, 0.1, 0.15]
 
-        self.W = 2  # 若改变，注意后续取整问题
+        self.W = 1  # 若改变，注意后续取整问题
         self.D = 1.0
         self.C_delta = 1
 
@@ -53,8 +53,8 @@ class Mec_co_1(gym.Env):
         self.ls = np.zeros((5002, self.n + 1))
         self.task = np.zeros(self.n+1)
 
-        self.alpha = np.array([1, 1, 1, 1, 1])
-        self.beta = np.array([0.3, 0.3, 0.3, 0.3, 0.3])
+        self.alpha = np.array([1, 1, 0.3, 0.3, 1])
+        self.beta = np.array([0.3, 0.3, 1, 0.3, 0.3])
         self.eta = 0.2
         self.ddl = 2
 
@@ -231,30 +231,11 @@ class Mec_co_1(gym.Env):
 
         reward = - self.alpha * E - self.beta * Q
 
-        # if var == 0:
-        #     f = open("DDPG-RA-%0.1f.txt" % self.D, "a")
-        #     if self.n == 1:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3]))
-        #     if self.n == 2:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3], self.state[4],
-        #                  self.state[5]))
-        #     if self.n == 3:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d %d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3], self.state[4],
-        #                  self.state[5], self.state[6], self.state[7]))
-        #     if self.n == 4:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d %d %d %d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3],
-        #                  self.state[4], self.state[5], self.state[6], self.state[7], self.state[8],
-        #                  self.state[9]))
-        #     if self.n == 5:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d %d %d %d %d %d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3],
-        #                  self.state[4], self.state[5], self.state[6], self.state[7], self.state[8],
-        #                  self.state[9], self.state[10], self.state[11]))
-        #     f.close()
+        if var == 0.5:
+            for p in range(self.n):
+                f = open("DDPG-RA-%d.txt" % p, "a")
+                f.write("%0.2f  %0.2f  %0.2f  " % (E[p], Q[p], reward[p]) + str(action[p])+" "+str(self.state[p])+"\n")
+                f.close()
 
         return self.state, reward, False, {}, E, Q
 
