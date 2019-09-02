@@ -18,7 +18,6 @@ MEMORY_CAPACITY = 10000
 BATCH_SIZE = 64
 
 RENDER = False
-OUTPUT_GRAPH = True
 ENV_NAME = 'CO-v0'  # TODO
 
 ###############################  DDPG  ####################################
@@ -28,7 +27,6 @@ class DDPG(object):
         self.memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
         self.pointer = 0
         self.index = index
-        # tf.reset_default_graph()
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         config.allow_soft_placement = True
