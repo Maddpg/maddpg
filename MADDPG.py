@@ -149,7 +149,7 @@ for i in range(env.n):
     agents[i].pointer = 0
     # tf.summary.FileWriter("logs/", agents[i].sess.graph)
 
-var = 5  # control exploration TODO
+var = 6  # control exploration TODO
 var_t = 0
 v_t = 0
 
@@ -263,7 +263,7 @@ for i in range(MAX_EPISODES):
                         a = np.zeros(env.n)
                 action_n.append(a)
 
-        new_obs_n, r_n, done, info, e_n, q_n = env.step(action_n, 0)
+        new_obs_n, r_n, done, info, e_n, q_n = env.step(action_n, var)
 
         if test != 1:
             for p, agent in enumerate(agents):
@@ -286,9 +286,6 @@ for i in range(MAX_EPISODES):
             agent_queue[p] += q
 
         if j == MAX_EP_STEPS-1:
-            f = open("DDPG-RA-%0.1f.txt" % env.n, "a")
-            f.write("%0.2f %d \n" % (ep_reward, i))
-            f.close()
             if var <= 5:
                 f = open("episode-%0.1f.txt" % env.n, "a")
                 f.write("%0.2f %0.2f %d %d\n" % (ep_reward, ep_energy, ep_queue, sum(arri)))
@@ -313,7 +310,7 @@ for i in range(MAX_EPISODES):
     # var = abs(var - var_t)  # decay the action randomness  TODO
 
     if num_epi >= 10:
-        var -= 0.5
+        var -= 0.1
         # test = 1
         if var < 0.5:
             var = 0.5
