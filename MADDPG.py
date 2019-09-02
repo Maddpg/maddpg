@@ -17,7 +17,7 @@ LR_C = 0.001    # learning rate for critic
 GAMMA = 0.9     # reward discount  TODO
 TAU = 0.001      # soft replacement
 MEMORY_CAPACITY = 10000
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 
 RENDER = False
@@ -147,7 +147,7 @@ for i in range(env.n):
     agents.append(DDPG(a_dim, o_dim, a_bound, i))
     agents[i].memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
     agents[i].pointer = 0
-    tf.summary.FileWriter("logs/", agents[i].sess.graph)
+    # tf.summary.FileWriter("logs/", agents[i].sess.graph)
 
 var = 5  # control exploration TODO
 var_t = 0
@@ -248,8 +248,9 @@ for i in range(MAX_EPISODES):
                 #     if times == 10000:
                 #         a = - action_n[p]
                 # action_n[p] = action_n[p] + a
-                a_list = env.find_excu_a(p)
-                action_n[p] = np.array(get_knn(k, action_n[p], a_list))
+                if not env.is_excu_a(p, action_n[p]):
+                    a_list = env.find_excu_a(p)
+                    action_n[p] = np.array(get_knn(k, action_n[p], a_list))
         else:
             action_n = []
             for p in range(env.n):
@@ -314,8 +315,8 @@ for i in range(MAX_EPISODES):
     if num_epi >= 10:
         var -= 0.5
         # test = 1
-        if var < 0:
-            var = 0
+        if var < 0.5:
+            var = 0.5
         num_epi = 0
 
     if ep_reward > max_r:
