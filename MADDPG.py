@@ -49,11 +49,11 @@ class DDPG(object):
 
         self.not_terminal = tf.placeholder(tf.float32, 1, 'not_terminal')
 
-        # 建立预测AC网络
+        # build actor and critic networks
         self.a = self._build_a(self.O,)
         self.q = self._build_c(self.S, self.a_n, self.a[:, np.newaxis, :],)
 
-        # 利用滑动平均建立targetAC网络
+        # build actor and critic networks with Exponential Moving Average
         a_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Actor-%d' % self.index)
         c_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='Critic-%d' % self.index)
         ema = tf.train.ExponentialMovingAverage(decay=1 - TAU)          # soft replacement
@@ -74,7 +74,6 @@ class DDPG(object):
             self.ctrain = tf.train.AdamOptimizer(LR_C).minimize(self.td_error, var_list=c_params)
 
         self.sess.run(tf.global_variables_initializer())
-
         self.saver = tf.train.Saver()
 
     def choose_action(self, s):
@@ -100,9 +99,8 @@ class DDPG(object):
 
     def store_transition(self, s, a, r, s_):
         transition = np.hstack((s, a, [r], s_))
-        index = self.pointer % MEMORY_CAPACITY  # replace the old memory with new memory
-        self.memory[index, :] = transition
-        self.pointer += 1
+        self.memory[self.pointer, :] = transition
+        self.pointer = (self.pointer + 1) % MEMORY_CAPACITY
 
     def get_exp(self, indices):
         bt = self.memory[indices, :]
@@ -127,7 +125,6 @@ class DDPG(object):
             qsa = tf.layers.dense(net, 1, name='r', trainable=trainable)
             return qsa  # Q(s,a)
 
-
 ###############################  training  ####################################
 
 env = gym.make(ENV_NAME)
@@ -140,8 +137,6 @@ a_bound = env.max_m
 agents = []
 for i in range(env.n):
     agents.append(DDPG(a_dim, o_dim, a_bound, i))
-    agents[i].memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
-    agents[i].pointer = 0
     tf.summary.FileWriter("logs/", agents[i].sess.graph)
 
 var = 5  # control exploration TODO
@@ -163,7 +158,6 @@ def get_knn(k, a, a_list):
         return L[0]
     else:
         return [0, 0, 0, 0, 0]
-
 
 def all_learn(agents, nt):
     indices = np.random.choice(MEMORY_CAPACITY, size=BATCH_SIZE)
@@ -277,7 +271,6 @@ for i in range(MAX_EPISODES):
 
     if num_epi >= 10:
         var -= 0.5
-        # test = 1
         if var < 0:
             var = 0
         num_epi = 0
@@ -288,6 +281,3 @@ for i in range(MAX_EPISODES):
         # for p, agent in enumerate(agents):
         #     agent.saver.save(agent.sess, './model/all/agent[%d]-n=5' % p)
 print('Running time: ', time.time() - t1)
-
-
-
