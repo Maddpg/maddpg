@@ -97,8 +97,9 @@ class DDPG(object):
 
     def store_transition(self, s, a, r, s_):
         transition = np.hstack((s, a, [r], s_))
-        self.memory[self.pointer, :] = transition
-        self.pointer = (self.pointer + 1) % MEMORY_CAPACITY
+        index = self.pointer % MEMORY_CAPACITY  # replace the old memory with new memory
+        self.memory[index, :] = transition
+        self.pointer += 1
 
     def get_exp(self, indices):
         bt = self.memory[indices, :]
