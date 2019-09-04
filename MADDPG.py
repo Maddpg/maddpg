@@ -227,20 +227,11 @@ for i in range(MAX_EPISODES):
 
         if np.random.uniform(0, 5) > var:     # 重新改变探索策略 TODO
             action_n = [np.reshape(agent.choose_action(obs), 5) for agent, obs in zip(agents, obs_n)]
-            # a = np.zeros(env.n)
             for p in range(env.n):
                 for q in range(env.n):
                     if action_n[p][q] >= a_bound:
                         action_n[p][q] -= 1
                     action_n[p][q] = int(action_n[p][q])
-                #     a[q] = random.randint(-action_n[p][q], env.max_m-action_n[p][q]-1)
-                # times = 0
-                # while not env.is_excu_a(p, action_n[p]+a):
-                #     times += 1
-                #     a = np.array([random.randint(-action_n[p][t], env.max_m-action_n[p][t]-1) for t in range(env.n)])
-                #     if times == 10000:
-                #         a = - action_n[p]
-                # action_n[p] = action_n[p] + a
                 if not env.is_excu_a(p, action_n[p]):
                     a_list = env.find_excu_a(p)
                     action_n[p] = np.array(get_knn(k, action_n[p], a_list))
@@ -291,8 +282,6 @@ for i in range(MAX_EPISODES):
                             % (agent_reward[p], agent_energy[p], agent_queue[p], agent_drop[p], arri[p]))
                     f.close()
             print('Episode:', i, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, 'test: ', test, ' arriv: ', arri)
-            # if ep_reward > -10:
-            #     sys.exit(0)
             break
 
     num_epi += 1

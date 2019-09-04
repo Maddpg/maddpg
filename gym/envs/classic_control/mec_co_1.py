@@ -78,35 +78,6 @@ class Mec_co_1(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    # def find_k_excu_a(self, k, a):
-    #     action = turn_to_action(a, self.max_m, self.n)
-    #     list_a = []
-    #     sq_num = [0, 1, 4, 9, 16, 25, 36]
-    #     for x in range(1, self.max_m ** 2 * (self.n+1)):
-    #         list_dis = squ(x, sq_num, self.n+1, [], [])
-    #         for dis in list_dis:
-    #             dis_root = list(map(lambda tt: tt ** 0.5, dis))
-    #
-    #             for t1 in [-1, 1]:
-    #                 for t2 in [-1, 1]:
-    #                     for t3 in [-1, 1]:
-    #                         for t4 in [-1, 1]:
-    #                             for t5 in [-1, 1]:
-    #                                 for t6 in [-1, 1]:
-    #                                     act = []
-    #                                     tag = 0
-    #                                     temp = [t1, t2, t3, t4, t5, t6]
-    #                                     for i in range(self.n+1):
-    #                                         act.append(action[i] + dis_root[i] * temp[i])
-    #                                         if act[i] < 0 or act[i] > self.max_m-1:
-    #                                             tag = 1
-    #                                             break
-    #                                     if tag == 0 and self.is_excu_a(act):
-    #                                         list_a.append(turn_to_index(act, self.max_m, self.n))
-    #                                         if len(list_a) == k:
-    #                                             return list_a
-    #     return list_a
-
     def is_excu_a(self, p, a):
         limit = self.state[p][2 * self.n]
         rest = sum(a) - limit
@@ -141,11 +112,6 @@ class Mec_co_1(gym.Env):
                     if action[i][j] > self.state[i][j+self.n]//self.D:
                         action[i][j] = self.state[i][j+self.n]//self.D  # TODO
 
-        # for i in range(1, self.n+1):
-        #     self.ls[self.t_step][i] = action[i]
-        # self.ls[self.t_step][0] = self.state[2*self.n+1] - sum(action) + action[0]
-        # self.t_step += 1
-
         # reward的计算
         E = np.zeros(self.n)
         for i in range(self.n):
@@ -159,9 +125,6 @@ class Mec_co_1(gym.Env):
                     t_T += action[i][j] / (self.state[i][j+self.n]/self.D + 0.0)
                     t_R += action[j][i] / (self.state[i][j+self.n]/self.D + 0.0)
             E[i] = E_0 + t_T * self.P_TX + t_R * self.P_RX
-
-        # # 记录本次执行的数量。
-        # exe = np.zeros(self.n+1)
 
         # state的更新
         # 执行
@@ -202,36 +165,7 @@ class Mec_co_1(gym.Env):
             self.state[i][self.n:2*self.n] = self.net[i]
             self.state[i][2*self.n] = arr_t[i]
 
-        # 时延的计算
-        # Q = np.zeros(self.n)
-        # for i in range(self.n):
-        #     Q[i] = self.state[0][i]
         Q = s_Q.copy()
-
-        # 计算任务完成情况并计算收益
-        # ut = 0
-        # for i in range(self.n+1):
-        #     while exe[i] != 0:
-        #         t_temp = self.ls[int(self.task[i])][i]
-        #         if exe[i] >= t_temp:
-        #             exe[i] -= t_temp
-        #             ut += calcu_ut(self.task[i], t_temp, self.t_step, self.alpha, self.eta)
-        #             self.ls[int(self.task[i])][i] = 0
-        #             self.task[i] += 1
-        #             # print(exe, '  ', self.task, '  ', t_temp, '  ', self.t_step, '  ', Q)
-        #         else:
-        #             ut += calcu_ut(self.task[i], exe[i], self.t_step, self.alpha, self.eta)
-        #             self.ls[int(self.task[i])][i] -= exe[i]
-        #             exe[i] = 0
-        #
-        # drop = 0
-        # for i in range(self.n+1):
-        #     while self.task[i] + self.ddl <= self.t_step:
-        #         t_temp = self.ls[int(self.task[i])][i]
-        #         self.ls[int(self.task[i])][i] = 0
-        #         self.state[i] -= t_temp
-        #         drop += t_temp
-        #         self.task[i] += 1
 
         reward = - self.alpha * E * 50 - self.beta * Q - self.eta * drop
 
@@ -265,14 +199,7 @@ class Mec_co_1(gym.Env):
         for i in range(self.n):
             self.state[i][self.n:2*self.n] = self.net[i]
             self.state[i][2*self.n] = arr_t[i]
-        # self.ls = np.zeros((5002, self.n+1))
-        # self.task = np.zeros(self.n+1)
-        # self.t_step = 0
         return self.state
-
-    # 不需要绘图，暂无
-    def render(self, mode='human'):
-        return None
 
     def close(self):
         if self.viewer:
@@ -299,26 +226,3 @@ def choose_epsilon(u, n, c_max, p_max):
         C[i] = c_max[i] * epsilon
     return C, P
 
-
-def squ(x, sq, n, l, all_d):
-    if x >= 0 and n > 0:
-        for i in sq:
-            l.append(i)
-            temp = x-i
-            if temp < 0:
-                l.pop(-1)
-                return all_d
-            all_d = squ(temp, sq, n-1, l, all_d)
-            l.pop(-1)
-    else:
-        if x == 0 and n == 0:
-            all_d.append(l.copy())
-            return all_d
-    return all_d
-
-
-def calcu_ut(task, a, step, alpha, eta):
-    # if task + 2 >= step:
-    return alpha * a
-    # else:
-    #     return alpha * pow(np.e, -eta * (step - task - 2)) * a
