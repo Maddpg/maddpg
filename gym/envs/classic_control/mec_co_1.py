@@ -22,7 +22,7 @@ class Mec_co_1(gym.Env):
 
         self.n = 5  # 基站数（实际考虑action时要考虑md所以是n+1）
         self.max_m = 7   # 最大任务数
-        self.lamda = 2  # slot的平均任务到达
+        self.lamda = 3  # slot的平均任务到达
         self.net_speed_min = 3
         self.net_speed_max = 7   # 最大传输速率 TODO 想要缩小维度
 
@@ -32,8 +32,8 @@ class Mec_co_1(gym.Env):
         self.FH = [2.6, 2.9, 2.9, 2, 2.5]
         self.aL = [0.15, 0.2, 0.2, 0.1, 0.15]
         self.aH = [0.15, 0.2, 0.2, 0.1, 0.15]
- 
-        self.W = 2  # 若改变，注意后续取整问题
+
+        self.W = 1  # 若改变，注意后续取整问题
         self.D = 1.0
         self.C_delta = 1
 
@@ -53,9 +53,9 @@ class Mec_co_1(gym.Env):
         self.ls = np.zeros((5002, self.n + 1))
         self.task = np.zeros(self.n+1)
 
-        self.alpha = np.array([1, 1, 1, 1, 1])
-        self.beta = np.array([0.3, 0.3, 0.3, 0.3, 0.3])
-        self.eta = 0.2
+        self.alpha = np.array([1, 1, 0.3, 0.3, 1])
+        self.beta = np.array([0.3, 0.3, 1, 0.3, 0.3])
+        self.eta = 1
         self.ddl = 2
 
         self.V = 0.1
@@ -77,35 +77,6 @@ class Mec_co_1(gym.Env):
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
-
-    # def find_k_excu_a(self, k, a):
-    #     action = turn_to_action(a, self.max_m, self.n)
-    #     list_a = []
-    #     sq_num = [0, 1, 4, 9, 16, 25, 36]
-    #     for x in range(1, self.max_m ** 2 * (self.n+1)):
-    #         list_dis = squ(x, sq_num, self.n+1, [], [])
-    #         for dis in list_dis:
-    #             dis_root = list(map(lambda tt: tt ** 0.5, dis))
-    #
-    #             for t1 in [-1, 1]:
-    #                 for t2 in [-1, 1]:
-    #                     for t3 in [-1, 1]:
-    #                         for t4 in [-1, 1]:
-    #                             for t5 in [-1, 1]:
-    #                                 for t6 in [-1, 1]:
-    #                                     act = []
-    #                                     tag = 0
-    #                                     temp = [t1, t2, t3, t4, t5, t6]
-    #                                     for i in range(self.n+1):
-    #                                         act.append(action[i] + dis_root[i] * temp[i])
-    #                                         if act[i] < 0 or act[i] > self.max_m-1:
-    #                                             tag = 1
-    #                                             break
-    #                                     if tag == 0 and self.is_excu_a(act):
-    #                                         list_a.append(turn_to_index(act, self.max_m, self.n))
-    #                                         if len(list_a) == k:
-    #                                             return list_a
-    #     return list_a
 
     def is_excu_a(self, p, a):
         limit = self.state[p][2 * self.n]
@@ -173,11 +144,15 @@ class Mec_co_1(gym.Env):
 
         # 卸载        TODO 直接通过矩阵运算可能会节省很多时间
         s_Q = np.zeros(self.n)
+        drop = np.zeros(self.n)
         for i in range(self.n):
             for j in range(self.n):
                 if i != j:
                     self.state[i][i] += action[j][i]
             s_Q[i] = self.state[i][i]
+            if s_Q[i] > 10:
+                drop[i] += s_Q[i] - 10
+                s_Q[i] = 10
         for i in range(self.n):
             self.state[i][:self.n] = s_Q.copy()
 
@@ -229,34 +204,15 @@ class Mec_co_1(gym.Env):
         #         drop += t_temp
         #         self.task[i] += 1
 
-        reward = - self.alpha * E - self.beta * Q
+        reward = - self.alpha * E * 50 - self.beta * Q - self.eta * drop
 
-        # if var == 0:
-        #     f = open("DDPG-RA-%0.1f.txt" % self.D, "a")
-        #     if self.n == 1:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3]))
-        #     if self.n == 2:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3], self.state[4],
-        #                  self.state[5]))
-        #     if self.n == 3:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d %d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3], self.state[4],
-        #                  self.state[5], self.state[6], self.state[7]))
-        #     if self.n == 4:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d %d %d %d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3],
-        #                  self.state[4], self.state[5], self.state[6], self.state[7], self.state[8],
-        #                  self.state[9]))
-        #     if self.n == 5:
-        #         f.write("%0.2f  %0.2f  %0.2f  %d  [%d %d %d %d %d %d %d %d %d %d %d %d]\n" %
-        #                 (E, drop, reward, u, self.state[0], self.state[1], self.state[2], self.state[3],
-        #                  self.state[4], self.state[5], self.state[6], self.state[7], self.state[8],
-        #                  self.state[9], self.state[10], self.state[11]))
-        #     f.close()
+        if var == 0.5:
+            for p in range(self.n):
+                f = open("DDPG-RA-%d.txt" % p, "a")
+                f.write("%0.2f  %0.2f  %0.2f  " % (E[p], Q[p], reward[p]) + str(action[p])+" "+str(self.state[p])+"\n")
+                f.close()
 
-        return self.state, reward, False, {}, E, Q
+        return self.state, reward, False, {}, E*50, Q, drop
 
     def reset(self):
         # 载入文件
@@ -307,13 +263,9 @@ def choose_epsilon(u, n, c_max, p_max):
     P = np.zeros(n)
     C = np.zeros(n)
     for i in range(n):
-        if u[i][i]/c_max[i] > 0.75:
+        epsilon = math.ceil(u[i][i]*10/c_max[i])/10.0
+        if epsilon > 1.0:
             epsilon = 1.0
-        else:
-            if u[i][i]/c_max[i] <= 1:
-                epsilon = 0.5
-            else:
-                epsilon = 0.75
         P[i] = pow(epsilon, 3) * p_max[i]
         C[i] = c_max[i] * epsilon
     return C, P
