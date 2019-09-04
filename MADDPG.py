@@ -206,15 +206,6 @@ def all_learn(agents, nt):
         act_n = np.delete(actor_a, p, 0)
         agent.learn_actor(s_n.swapaxes(1, 0), act_n.swapaxes(1, 0), s_n[p])
 
-    # obs = np.ones(o_dim)
-    # print(agents[0].choose_action(obs))
-    # print(agents[4].choose_action(obs))
-    # print("____________________________")
-    # s = np.ones((1, env.n, o_dim))
-    # a_n = np.ones((1, env.n-1, a_dim))
-    # a = np.ones((1, a_dim))
-    # print(agents[4].get_q(s, a_n, a))
-
 
 num_epi = 0
 max_r = -np.inf
@@ -224,9 +215,11 @@ for i in range(MAX_EPISODES):
     ep_reward = 0.0
     ep_energy = 0.0
     ep_queue = 0
+    ep_drop = 0
     agent_reward = [0.0 for _ in range(env.n)]
     agent_energy = [0.0 for _ in range(env.n)]
     agent_queue = [0.0 for _ in range(env.n)]
+    agent_drop = [0.0 for _ in range(env.n)]
 
     for j in range(MAX_EP_STEPS):
         if RENDER:
@@ -263,7 +256,7 @@ for i in range(MAX_EPISODES):
                         a = np.zeros(env.n)
                 action_n.append(a)
 
-        new_obs_n, r_n, done, info, e_n, q_n = env.step(action_n, var)
+        new_obs_n, r_n, done, info, e_n, q_n, drop = env.step(action_n, var)
 
         if test != 1:
             for p, agent in enumerate(agents):
@@ -277,22 +270,25 @@ for i in range(MAX_EPISODES):
 
         obs_n = new_obs_n.copy()
 
-        for p, (r, e, q) in enumerate(zip(r_n, e_n, q_n)):
+        for p, (r, e, q, d) in enumerate(zip(r_n, e_n, q_n, drop)):
             ep_reward += r
             ep_energy += e
             ep_queue += q
+            ep_drop += d
             agent_reward[p] += r
             agent_energy[p] += e
             agent_queue[p] += q
+            agent_drop[p] += d
 
         if j == MAX_EP_STEPS-1:
             if var <= 5:
                 f = open("episode-%0.1f.txt" % env.n, "a")
-                f.write("%0.2f %0.2f %d %d\n" % (ep_reward, ep_energy, ep_queue, sum(arri)))
+                f.write("%0.2f %0.2f %d %d %d\n" % (ep_reward, ep_energy, ep_queue, ep_drop, sum(arri)))
                 f.close()
                 for p in range(env.n):
                     f = open("agent-%d.txt" % p, "a")
-                    f.write("%0.2f %0.2f %d %d\n" % (agent_reward[p], agent_energy[p], agent_queue[p], arri[p]))
+                    f.write("%0.2f %0.2f %d %d %d\n"
+                            % (agent_reward[p], agent_energy[p], agent_queue[p], agent_drop[p], arri[p]))
                     f.close()
             print('Episode:', i, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, 'test: ', test, ' arriv: ', arri)
             # if ep_reward > -10:
@@ -309,7 +305,7 @@ for i in range(MAX_EPISODES):
     #     var_t = var
     # var = abs(var - var_t)  # decay the action randomness  TODO
 
-    if num_epi >= 10:
+    if num_epi >= 3:
         var -= 0.1
         # test = 1
         if var < 0.5:

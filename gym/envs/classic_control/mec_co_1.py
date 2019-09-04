@@ -22,7 +22,7 @@ class Mec_co_1(gym.Env):
 
         self.n = 5  # 基站数（实际考虑action时要考虑md所以是n+1）
         self.max_m = 7   # 最大任务数
-        self.lamda = 2  # slot的平均任务到达
+        self.lamda = 3  # slot的平均任务到达
         self.net_speed_min = 3
         self.net_speed_max = 7   # 最大传输速率 TODO 想要缩小维度
 
@@ -55,7 +55,7 @@ class Mec_co_1(gym.Env):
 
         self.alpha = np.array([1, 1, 0.3, 0.3, 1])
         self.beta = np.array([0.3, 0.3, 1, 0.3, 0.3])
-        self.eta = 0.2
+        self.eta = 1
         self.ddl = 2
 
         self.V = 0.1
@@ -173,11 +173,15 @@ class Mec_co_1(gym.Env):
 
         # 卸载        TODO 直接通过矩阵运算可能会节省很多时间
         s_Q = np.zeros(self.n)
+        drop = np.zeros(self.n)
         for i in range(self.n):
             for j in range(self.n):
                 if i != j:
                     self.state[i][i] += action[j][i]
             s_Q[i] = self.state[i][i]
+            if s_Q[i] > 10:
+                drop[i] += s_Q[i] - 10
+                s_Q[i] = 10
         for i in range(self.n):
             self.state[i][:self.n] = s_Q.copy()
 
@@ -229,7 +233,7 @@ class Mec_co_1(gym.Env):
         #         drop += t_temp
         #         self.task[i] += 1
 
-        reward = - self.alpha * E - self.beta * Q
+        reward = - self.alpha * E * 50 - self.beta * Q - self.eta * drop
 
         if var == 0.5:
             for p in range(self.n):
@@ -237,7 +241,7 @@ class Mec_co_1(gym.Env):
                 f.write("%0.2f  %0.2f  %0.2f  " % (E[p], Q[p], reward[p]) + str(action[p])+" "+str(self.state[p])+"\n")
                 f.close()
 
-        return self.state, reward, False, {}, E, Q
+        return self.state, reward, False, {}, E*50, Q, drop
 
     def reset(self):
         # 载入文件
@@ -288,13 +292,9 @@ def choose_epsilon(u, n, c_max, p_max):
     P = np.zeros(n)
     C = np.zeros(n)
     for i in range(n):
-        if u[i][i]/c_max[i] > 0.75:
+        epsilon = math.ceil(u[i][i]*10/c_max[i])/10.0
+        if epsilon > 1.0:
             epsilon = 1.0
-        else:
-            if u[i][i]/c_max[i] <= 1:
-                epsilon = 0.5
-            else:
-                epsilon = 0.75
         P[i] = pow(epsilon, 3) * p_max[i]
         C[i] = c_max[i] * epsilon
     return C, P
