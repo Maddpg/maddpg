@@ -149,7 +149,7 @@ for i in range(env.n):
     agents[i].pointer = 0
     # tf.summary.FileWriter("logs/", agents[i].sess.graph)
 
-var = 6  # control exploration TODO
+var = 5.5  # control exploration TODO
 var_t = 0
 v_t = 0
 
@@ -157,6 +157,10 @@ k = 1
 test = 0
 t1 = time.time()
 # ddpg.saver.restore(ddpg.sess, './model/all/DDPG-RA-KNN-3-10')
+f = open("net_parameter.txt", "a")
+f.write("STEP = %d\nLR_A = %f\nLR_C = %f\nGAMMA = %.3f\nEXP_CAP = %d\nBATCH_SIZE = %d"
+        % (MAX_EP_STEPS, LR_A, LR_C, GAMMA, MEMORY_CAPACITY, BATCH_SIZE))
+f.close()
 
 
 def get_knn(k, a, a_list):
@@ -254,7 +258,7 @@ for i in range(MAX_EPISODES):
                 agent.store_transition(obs_n[p], action_n[p], r_n[p], new_obs_n[p])
                 arri[p] += obs_n[p][2 * env.n]
 
-            if j % 10 == 0:
+            if j % 2 == 0:
                 if all(list(map(lambda tt: tt.pointer > MEMORY_CAPACITY, agents))):
                     nt = [0] if j == MAX_EP_STEPS - 1 else [1]
                     all_learn(agents, nt)
@@ -304,8 +308,8 @@ for i in range(MAX_EPISODES):
     if ep_reward > max_r:
         max_r = ep_reward
         print("-------------------------------------\n-----------------------------------")
-        # for p, agent in enumerate(agents):
-        #     agent.saver.save(agent.sess, './model/all/agent[%d]-n=5' % p)
+        for p, agent in enumerate(agents):
+            agent.saver.save(agent.sess, './model/all/agent[%d]-n=5' % p)
 print('Running time: ', time.time() - t1)
 
 

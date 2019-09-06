@@ -22,7 +22,7 @@ class Mec_co_1(gym.Env):
 
         self.n = 5  # 基站数（实际考虑action时要考虑md所以是n+1）
         self.max_m = 7   # 最大任务数
-        self.lamda = 3  # slot的平均任务到达
+        self.lamda = [1, 2, 3, 4, 5]  # slot的平均任务到达
         self.net_speed_min = 3
         self.net_speed_max = 7   # 最大传输速率 TODO 想要缩小维度
 
@@ -30,8 +30,8 @@ class Mec_co_1(gym.Env):
         self.NH = [4, 4, 4, 2, 2]
         self.FL = [1.8, 1.7, 1.7, 1.7, 1.6]
         self.FH = [2.6, 2.9, 2.9, 2, 2.5]
-        self.aL = [0.15, 0.2, 0.2, 0.1, 0.15]
-        self.aH = [0.15, 0.2, 0.2, 0.1, 0.15]
+        self.aL = 0.1125
+        self.aH = 0.1125
 
         self.W = 1  # 若改变，注意后续取整问题
         self.D = 1.0
@@ -47,15 +47,15 @@ class Mec_co_1(gym.Env):
 
         for i in range(self.n):
             self.C_max[i] = (self.NL[i] * self.FL[i] + self.NH[i] * self.FH[i]) / self.W
-            self.P_max[i] = self.aL[i] * self.NL[i] * self.FL[i] ** 3 + self.aH[i] * self.NH[i] * self.FH[i] ** 3
+            self.P_max[i] = self.aL * self.NL[i] * self.FL[i] ** 3 + self.aH * self.NH[i] * self.FH[i] ** 3
 
         self.t_step = 0
         self.ls = np.zeros((5002, self.n + 1))
         self.task = np.zeros(self.n+1)
 
-        self.alpha = np.array([1, 1, 0.3, 0.3, 1])
+        self.alpha = np.array([1, 1, 0.3, 0.3, 1]) * 50
         self.beta = np.array([0.3, 0.3, 1, 0.3, 0.3])
-        self.eta = 1
+        self.eta = 20
         self.ddl = 2
 
         self.V = 0.1
@@ -73,6 +73,13 @@ class Mec_co_1(gym.Env):
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         self.seed()
+        f = open("env_parameter.txt", "a")
+        f.write("n = %d\nW = %f\nD = %f\n" % (self.n, self.W, self.D))
+        f.write("alpha         beta         eta         lambda\n")
+        for i in range(self.n):
+            f.write("%.2f          %.2f         %.2f         %d\n"
+                    % (self.alpha[i], self.beta[i], self.eta, self.lamda[i]))
+        f.close()
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -167,7 +174,7 @@ class Mec_co_1(gym.Env):
 
         Q = s_Q.copy()
 
-        reward = - self.alpha * E * 50 - self.beta * Q - self.eta * drop
+        reward = - self.alpha * E - self.beta * Q - self.eta * drop
 
         if var == 0.5:
             for p in range(self.n):
@@ -175,7 +182,7 @@ class Mec_co_1(gym.Env):
                 f.write("%0.2f  %0.2f  %0.2f  " % (E[p], Q[p], reward[p]) + str(action[p])+" "+str(self.state[p])+"\n")
                 f.close()
 
-        return self.state, reward, False, {}, E*50, Q, drop
+        return self.state, reward, False, {}, E*100, Q, drop
 
     def reset(self):
         # 载入文件
