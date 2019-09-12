@@ -22,7 +22,7 @@ class Mec_co_1(gym.Env):
 
         self.n = 5  # 基站数（实际考虑action时要考虑md所以是n+1）
         self.max_m = 7   # 最大任务数
-        self.lamda = [1, 2, 3, 4, 5]  # slot的平均任务到达
+        self.lamda = [0, 1, 2, 3, 4]  # slot的平均任务到达
         self.net_speed_min = 3
         self.net_speed_max = 7   # 最大传输速率 TODO 想要缩小维度
 
@@ -53,8 +53,8 @@ class Mec_co_1(gym.Env):
         self.ls = np.zeros((5002, self.n + 1))
         self.task = np.zeros(self.n+1)
 
-        self.alpha = np.array([1, 1, 0.3, 0.3, 1]) * 50
-        self.beta = np.array([0.3, 0.3, 1, 0.3, 0.3])
+        self.alpha = np.array([1, 1, 1, 1, 1])*100
+        self.beta = np.array([0.3, 0.3, 0.3, 0.3, 0.3])
         self.eta = 20
         self.ddl = 2
 
@@ -73,17 +73,19 @@ class Mec_co_1(gym.Env):
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         self.seed()
-        f = open("env_parameter.txt", "a")
+
+    def seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
+
+    def write_para(self, c):
+        f = open("./%d/env_parameter.txt" % c, "a")
         f.write("n = %d\nW = %f\nD = %f\n" % (self.n, self.W, self.D))
         f.write("alpha         beta         eta         lambda\n")
         for i in range(self.n):
             f.write("%.2f          %.2f         %.2f         %d\n"
                     % (self.alpha[i], self.beta[i], self.eta, self.lamda[i]))
         f.close()
-
-    def seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
 
     def is_excu_a(self, p, a):
         limit = self.state[p][2 * self.n]
@@ -176,15 +178,18 @@ class Mec_co_1(gym.Env):
 
         reward = - self.alpha * E - self.beta * Q - self.eta * drop
 
-        if var == 0.5:
+        if var <= 0.5:
             for p in range(self.n):
                 f = open("DDPG-RA-%d.txt" % p, "a")
                 f.write("%0.2f  %0.2f  %0.2f  " % (E[p], Q[p], reward[p]) + str(action[p])+" "+str(self.state[p])+"\n")
                 f.close()
 
-        return self.state, reward, False, {}, E*100, Q, drop
+        return self.state, reward, False, {}, E*10, Q, drop
 
-    def reset(self):
+    def reset(self, choose):
+        list_lambda = [[0, 1, 2, 3, 4], [1, 2, 3, 4, 5], [5, 5, 5, 5, 5], [1, 1, 1, 1, 1], [3, 3, 3, 3, 3]]
+        self.lamda = list_lambda[choose].copy()
+
         # 载入文件
         self.net = np.zeros((self.n, self.n))
         if mode == 1:
@@ -202,10 +207,10 @@ class Mec_co_1(gym.Env):
                     self.net[j][i] = self.net[i][j]
 
         self.state = np.zeros((self.n, 2*self.n+1))
-
         for i in range(self.n):
             self.state[i][self.n:2*self.n] = self.net[i]
             self.state[i][2*self.n] = arr_t[i]
+
         return self.state
 
     def close(self):
