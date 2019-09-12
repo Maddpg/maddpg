@@ -298,11 +298,11 @@ for choose in range(5):
 
             if j == MAX_EP_STEPS-1:
                 if var <= 5:
-                    f = open("episode-%0.1f.txt" % env.n, "a")
+                    f = open("./%d/episode-%0.1f.txt" % (choose, env.n), "a")
                     f.write("%0.2f %0.2f %d %d %d\n" % (ep_reward, ep_energy, ep_queue, ep_drop, sum(arri)))
                     f.close()
                     for p in range(env.n):
-                        f = open("agent-%d.txt" % p, "a")
+                        f = open("./%d/agent-%d.txt" % (choose, p), "a")
                         f.write("%0.2f %0.2f %d %d %d\n"
                                 % (agent_reward[p], agent_energy[p], agent_queue[p], agent_drop[p], arri[p]))
                         f.close()
