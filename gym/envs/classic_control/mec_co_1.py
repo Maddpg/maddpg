@@ -20,16 +20,18 @@ class Mec_co_1(gym.Env):
     def __init__(self):
         self.test = np.zeros(10000)
 
-        self.n = 5  # 基站数（实际考虑action时要考虑md所以是n+1）
+        self.n = 4  # 基站数（实际考虑action时要考虑md所以是n+1）
         self.max_m = 7   # 最大任务数
-        self.lamda = [0, 1, 2, 3, 4]  # slot的平均任务到达
-        self.net_speed_min = 3
-        self.net_speed_max = 7   # 最大传输速率 TODO 想要缩小维度
+        self.lamda = [0, 1, 2, 3]  # slot的平均任务到达
+        self.net_speed_min = 5
+        self.net_speed_max = 5   # 最大传输速率 TODO 想要缩小维度
 
-        self.NL = [4, 4, 4, 6, 4]
-        self.NH = [4, 4, 4, 2, 2]
-        self.FL = [1.8, 1.7, 1.7, 1.7, 1.6]
-        self.FH = [2.6, 2.9, 2.9, 2, 2.5]
+        self.one = [15, 15, 15, 15, self.net_speed_max, self.net_speed_max, self.net_speed_max, self.net_speed_max, 15]
+
+        self.NL = [4, 4, 6, 4]
+        self.NH = [4, 4, 2, 2]
+        self.FL = [1.8, 1.7, 1.7, 1.6]
+        self.FH = [2.6, 2.9, 2, 2.5]
         self.aL = 0.1125
         self.aH = 0.1125
 
@@ -53,9 +55,9 @@ class Mec_co_1(gym.Env):
         self.ls = np.zeros((5002, self.n + 1))
         self.task = np.zeros(self.n+1)
 
-        self.alpha = np.array([1, 1, 1, 1, 1])*100
-        self.beta = np.array([0.3, 0.3, 0.3, 0.3, 0.3])
-        self.eta = 20
+        self.alpha = np.array([1, 1, 1, 1])*100
+        self.beta = np.array([0.5, 0.5, 0.5, 0.5])
+        self.eta = 100
         self.ddl = 2
 
         self.V = 0.1
@@ -151,9 +153,9 @@ class Mec_co_1(gym.Env):
                 if i != j:
                     self.state[i][i] += action[j][i]
             s_Q[i] = self.state[i][i]
-            if s_Q[i] > 10:
-                drop[i] += s_Q[i] - 10
-                s_Q[i] = 10
+            if s_Q[i] > 15:
+                drop[i] += s_Q[i] - 15
+                s_Q[i] = 15
         for i in range(self.n):
             self.state[i][:self.n] = s_Q.copy()
 
@@ -167,7 +169,7 @@ class Mec_co_1(gym.Env):
             arr_t = np.random.poisson(self.lamda, self.n)
             for i in range(self.n):
                 for j in range(i + 1, self.n):
-                    self.net[i][j] = random.randint(self.net_speed_min, self.net_speed_max + 1)
+                    self.net[i][j] = random.randint(self.net_speed_min, self.net_speed_max)
                     self.net[j][i] = self.net[i][j]
 
         for i in range(self.n):
@@ -178,16 +180,16 @@ class Mec_co_1(gym.Env):
 
         reward = - self.alpha * E - self.beta * Q - self.eta * drop
 
-        if var <= 0.5:
+        if var == 0:
             for p in range(self.n):
                 f = open("DDPG-RA-%d.txt" % p, "a")
                 f.write("%0.2f  %0.2f  %0.2f  " % (E[p], Q[p], reward[p]) + str(action[p])+" "+str(self.state[p])+"\n")
                 f.close()
 
-        return self.state, reward, False, {}, E*10, Q, drop
+        return self.state/self.one, reward, False, {}, E*10, Q, drop
 
     def reset(self, choose):
-        list_lambda = [[0, 1, 2, 3, 4], [1, 2, 3, 4, 5], [5, 5, 5, 5, 5], [1, 1, 1, 1, 1], [3, 3, 3, 3, 3]]
+        list_lambda = [[0, 1, 2, 3], [1, 2, 3, 4], [5, 5, 5, 5], [2, 2, 2, 2], [5, 5, 5, 5]]
         self.lamda = list_lambda[choose].copy()
 
         # 载入文件
@@ -203,7 +205,7 @@ class Mec_co_1(gym.Env):
             arr_t = np.random.poisson(self.lamda, self.n)
             for i in range(self.n):
                 for j in range(i+1, self.n):
-                    self.net[i][j] = random.randint(self.net_speed_min, self.net_speed_max+1)
+                    self.net[i][j] = random.randint(self.net_speed_min, self.net_speed_max)
                     self.net[j][i] = self.net[i][j]
 
         self.state = np.zeros((self.n, 2*self.n+1))
@@ -211,7 +213,7 @@ class Mec_co_1(gym.Env):
             self.state[i][self.n:2*self.n] = self.net[i]
             self.state[i][2*self.n] = arr_t[i]
 
-        return self.state
+        return self.state/self.one
 
     def close(self):
         if self.viewer:
