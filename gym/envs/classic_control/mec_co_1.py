@@ -23,8 +23,8 @@ class Mec_co_1(gym.Env):
         self.n = 4  # 基站数（实际考虑action时要考虑md所以是n+1）
         self.max_m = 7   # 最大任务数
         self.lamda = [0, 1, 2, 3]  # slot的平均任务到达
-        self.net_speed_min = 5
-        self.net_speed_max = 5   # 最大传输速率 TODO 想要缩小维度
+        self.net_speed_min = 3
+        self.net_speed_max = 7   # 最大传输速率 TODO 想要缩小维度
 
         self.one = [15, 15, 15, 15, self.net_speed_max, self.net_speed_max, self.net_speed_max, self.net_speed_max, 15]
 
@@ -35,7 +35,7 @@ class Mec_co_1(gym.Env):
         self.aL = 0.1125
         self.aH = 0.1125
 
-        self.W = 1  # 若改变，注意后续取整问题
+        self.W = 2.5   # 若改变，注意后续取整问题
         self.D = 1.0
         self.C_delta = 1
 
@@ -189,7 +189,7 @@ class Mec_co_1(gym.Env):
         return self.state/self.one, reward, False, {}, E*10, Q, drop
 
     def reset(self, choose):
-        list_lambda = [[0, 1, 2, 3], [1, 2, 3, 4], [5, 5, 5, 5], [2, 2, 2, 2], [5, 5, 5, 5]]
+        list_lambda = [[0, 1, 2, 3], [2, 3, 4, 5], [5, 5, 5, 5], [3, 3, 3, 3], [5, 5, 5, 5]]
         self.lamda = list_lambda[choose].copy()
 
         # 载入文件

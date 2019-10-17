@@ -9,14 +9,14 @@ import sys
 
 #####################  hyper parameters  ####################
 
-MAX_EPISODES = 3000
+MAX_EPISODES = 5000
 MAX_EP_STEPS = 1000
-LR_A = 0.0001    # learning rate for actor
-LR_C = 0.001    # learning rate for critic
-GAMMA = 0.9     # reward discount  TODO
+LR_A = 0.00001    # learning rate for actor
+LR_C = 0.0003   # learning rate for critic
+GAMMA = 0.99     # reward discount  TODO
 TAU = 0.001      # soft replacement
-MEMORY_CAPACITY = 10000
-BATCH_SIZE = 16
+MEMORY_CAPACITY = 30000
+BATCH_SIZE = 32
 
 
 RENDER = False
@@ -29,7 +29,7 @@ ENV_NAME = 'CO-v0'  # TODO
 
 class DDPG(object):
     def __init__(self, a_dim, o_dim, a_bound, index):
-        self.memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
+        self.memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 2), dtype=np.float32)
         self.pointer = 0
         self.index = index
         # tf.reset_default_graph()
@@ -50,6 +50,7 @@ class DDPG(object):
         self.S_ = tf.placeholder(tf.float32, [None, env.n, o_dim], 's_')
 
         self.R = tf.placeholder(tf.float32, [None, 1], 'r')
+        self.end = tf.placeholder(tf.float32, [None, 1])
 
         # 建立预测AC网络
         self.a = self._build_a(self.O,)
@@ -71,7 +72,7 @@ class DDPG(object):
         self.atrain = tf.train.AdamOptimizer(LR_A).minimize(self.a_loss, var_list=a_params)
 
         with tf.control_dependencies(target_update):    # soft replacement happened at here
-            q_target = self.R + GAMMA * q_
+            q_target = self.R + GAMMA * q_ * (1 - self.end)
             self.td_error = tf.losses.mean_squared_error(labels=q_target, predictions=self.q)
             self.ctrain = tf.train.AdamOptimizer(LR_C).minimize(self.td_error, var_list=c_params)
 
@@ -84,7 +85,7 @@ class DDPG(object):
         return x
 
     def get_q(self, s, a_n, a):
-        return self.sess.run(self.q, {self.S: s, self.a_n: a_n, self.a: a})
+        return self.sess.run(self.q, {self.S: s[np.newaxis, :], self.a_n: a_n[np.newaxis, :], self.a: a[np.newaxis, :]})
 
     def get_a(self, s):
         return self.sess.run(self.a, {self.O: s})
@@ -95,15 +96,15 @@ class DDPG(object):
     def learn_actor(self, s, a_n, o):
         self.sess.run(self.atrain, {self.S: s, self.a_n: a_n, self.O: o})
 
-    def learn_critic(self, s, a_n, a, r, s_, a_n_, a_):
-        if self.pointer % 500 == 0:
+    def learn_critic(self, s, a_n, a, r, s_, a_n_, a_, end):
+        if self.pointer % 500 == 1:
             print(self.sess.run(self.td_error, {self.S: s, self.a_n: a_n, self.a: a, self.R: r, self.S_: s_,
-                                                self.a_n_: a_n_, self.a_: a_}))
+                                                self.a_n_: a_n_, self.a_: a_, self.end: end}))
         self.sess.run(self.ctrain, {self.S: s, self.a_n: a_n, self.a: a, self.R: r,
-                                    self.S_: s_, self.a_n_: a_n_, self.a_: a_})
+                                    self.S_: s_, self.a_n_: a_n_, self.a_: a_, self.end: end})
 
-    def store_transition(self, s, a, r, s_):
-        transition = np.hstack((s, a, [r], s_))
+    def store_transition(self, s, a, r, s_, end):
+        transition = np.hstack((s, a, [r], s_, end))
         index = self.pointer % MEMORY_CAPACITY  # replace the old memory with new memory
         self.memory[index, :] = transition
         self.pointer += 1
@@ -112,15 +113,18 @@ class DDPG(object):
         bt = self.memory[indices, :]
         bs = bt[:, :self.o_dim]
         ba = bt[:, self.o_dim: self.o_dim + self.a_dim]
-        br = bt[:, -self.o_dim - 1: -self.o_dim]
-        bs_ = bt[:, -self.o_dim:]
-        return bs, ba, br, bs_
+        br = bt[:, -self.o_dim - 2: -self.o_dim - 1]
+        bs_ = bt[:, -self.o_dim - 1: -1]
+        end = bt[:, -1:]
+
+        return bs, ba, br, bs_, end
 
     def _build_a(self, s, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
         with tf.variable_scope('Actor-%d' % self.index, reuse=reuse, custom_getter=custom_getter):
-            net = tf.layers.dense(s, 30, activation=tf.nn.swish, name='l1', trainable=trainable)
-            a = tf.layers.dense(net, a_dim, activation=tf.nn.sigmoid, name='e', trainable=trainable)
+            net = tf.layers.dense(s, 30, activation=tf.nn.swish, name='l11', trainable=trainable)
+            net2 = tf.layers.dense(net, 30, activation=tf.nn.swish, name='l12', trainable=trainable)
+            a = tf.layers.dense(net2, a_dim, activation=tf.nn.sigmoid, name='e', trainable=trainable)
             return a
 
     def _build_c(self, s, a_n, a, reuse=None, custom_getter=None):
@@ -135,7 +139,7 @@ class DDPG(object):
 
 
 class OrnsteinUhlenbeckActionNoise:
-    def __init__(self, mu, sigma=0.2, theta=0.15, dt=1e-2, x0=None):
+    def __init__(self, mu, sigma, theta=0.3, dt=1e-2, x0=None):
         self.theta = theta
         self.mu = mu
         self.sigma = sigma
@@ -185,20 +189,22 @@ def all_learn(agents, j):
     a_n = np.zeros((env.n, BATCH_SIZE, a_dim))
     r_n = np.zeros((env.n, BATCH_SIZE, 1))
     s__n = np.zeros((env.n, BATCH_SIZE, o_dim))
+    end_n = np.zeros((env.n, BATCH_SIZE, 1))
 
     for p, agent in enumerate(agents):
-        s, a, r, s_ = agent.get_exp(indices)
+        s, a, r, s_, endd = agent.get_exp(indices)
         s_n[p] = s.copy()
         a_n[p] = a.copy()
         r_n[p] = r.copy()
         s__n[p] = s_.copy()
+        end_n[p] = endd.copy()
 
     actor_a_ = np.array([agent.get_a_(s__n[p]) for p, agent in enumerate(agents)])
 
-    # for i in range(env.n):
-    #     for p in range(BATCH_SIZE):
-    #         for q in range(env.n):
-    #             actor_a_[i][p][q] = int(actor_a_[i][p][q]*a_bound)/a_bound
+    for i in range(env.n):
+        for p in range(BATCH_SIZE):
+            for q in range(env.n):
+                actor_a_[i][p][q] = int(actor_a_[i][p][q]*a_bound)/a_bound
 
     for p, agent in enumerate(agents):
         act = a_n[p].copy()
@@ -210,7 +216,7 @@ def all_learn(agents, j):
         act_n_ = np.delete(act_n_, p, 0)
 
         agent.learn_critic(s_n.swapaxes(1, 0), act_n.swapaxes(1, 0), act, r_n[p], s__n.swapaxes(1, 0),
-                           act_n_.swapaxes(1, 0), act_)
+                           act_n_.swapaxes(1, 0), act_, end_n[p])
 
     if j % 1 == 0:
         actor_a = [agent.get_a(s_n[p]) for p, agent in enumerate(agents)]
@@ -225,12 +231,10 @@ def all_learn(agents, j):
             agent.learn_actor(s_n.swapaxes(1, 0), act_n.swapaxes(1, 0), s_n[p])
 
 
-for choose in range(3, 5):
+for choose in range(1, 5):
     agents = []
     for i in range(env.n):
         agents.append(DDPG(a_dim, o_dim, a_bound, i))
-        agents[i].memory = np.zeros((MEMORY_CAPACITY, o_dim * 2 + a_dim + 1), dtype=np.float32)
-        agents[i].pointer = 0
         # tf.summary.FileWriter("logs/", agents[i].sess.graph)
 
     var = 0  # control exploration TODO
@@ -239,7 +243,7 @@ for choose in range(3, 5):
     var_t = 0
     v_t = 0
 
-    SIGMA = 0.5
+    SIGMA = 0.3
     k = 1
     test = 0
     t1 = time.time()
@@ -255,6 +259,8 @@ for choose in range(3, 5):
     max_r = -np.inf
     for i in range(MAX_EPISODES):
         obs_n = env.reset(choose).copy()
+        for ag in range(env.n):
+            print(agents[ag].get_q(obs_n, np.zeros((env.n-1, env.n)), np.zeros(env.n)))
         if i == 0:
             env.write_para(choose)
         arri = [0.0 for _ in range(env.n)]
@@ -267,7 +273,9 @@ for choose in range(3, 5):
         agent_queue = [0.0 for _ in range(env.n)]
         agent_drop = [0.0 for _ in range(env.n)]
 
-        SIGMA *= 0.99
+        SIGMA -= 0.0002
+        if SIGMA < 0.3:
+            SIGMA = 0.3
         orn = [OrnsteinUhlenbeckActionNoise(mu=np.zeros(env.n), sigma=SIGMA) for _ in range(env.n)]
         ou_n = [np.zeros(env.n) for _ in range(env.n)]
 
@@ -284,6 +292,7 @@ for choose in range(3, 5):
                     if action_n[p][q] < 0:
                         action_n[p][q] = 0
 
+                # 这个寻找最近点方式不太好，1是增加环境复杂度，2是容易造成较大误差，需要改变选取可用集方式
                 if not env.is_excu_a(p, action_n[p]):
                     a_list = env.find_excu_a(p)
                     action_n[p] = np.array(get_knn(k, action_n[p], a_list))
@@ -291,11 +300,14 @@ for choose in range(3, 5):
             new_obs_n, r_n, done, info, e_n, q_n, drop = env.step(action_n, exp)
 
             if test != 1:
+                end = 0
+                if j == MAX_EP_STEPS - 1:
+                    end = 1
                 for p, agent in enumerate(agents):
-                    agent.store_transition(obs_n[p], action_n_real[p], r_n[p], new_obs_n[p])
-
-                if all(list(map(lambda tt: tt.pointer > MEMORY_CAPACITY, agents))):
-                    all_learn(agents, j)
+                    agent.store_transition(obs_n[p], action_n_real[p], r_n[p], new_obs_n[p], end)
+                if j % 50 == 0:
+                    if all(list(map(lambda tt: tt.pointer > MEMORY_CAPACITY, agents))):
+                        all_learn(agents, j)
 
             for p, (r, e, q, d) in enumerate(zip(r_n, e_n, q_n, drop)):
                 ep_reward += r
@@ -330,7 +342,7 @@ for choose in range(3, 5):
             for p, agent in enumerate(agents):
                 agent.saver.save(agent.sess, './model/all/%d/agent[%d]-n=4' % (choose, p))
 
-        if agents[0].pointer >= MEMORY_CAPACITY-1:
+        if agents[0].pointer >= MEMORY_CAPACITY-2:
             if exp != 0:
                 exp -= 0.05
                 if exp < 2:
