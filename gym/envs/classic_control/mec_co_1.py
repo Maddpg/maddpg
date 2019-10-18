@@ -119,6 +119,8 @@ class Mec_co_1(gym.Env):
                 if i == j:
                     if action[i][i] > C_0[i]:
                         action[i][i] = C_0[i] // 1
+                    # else:
+                    #     action[i][i] = action[i][i] // 1
                 else:
                     if action[i][j] > self.state[i][j+self.n]//self.D:
                         action[i][j] = self.state[i][j+self.n]//self.D  # TODO

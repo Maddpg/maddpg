@@ -47,7 +47,7 @@ for choose in D_list:
                     if count == 100:
                         action_n[p] = np.zeros(env.n)
 
-            new_obs_n, r_n, done, info, e_n, q_n, drop = env.step(action_n, 1)
+            new_obs_n, r_n, done, info, e_n, q_n, drop = env.step(action_n, 0)
 
             for p, (r, e, q, d) in enumerate(zip(r_n, e_n, q_n, drop)):
                 ep_reward += r
