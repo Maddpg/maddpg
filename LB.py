@@ -12,7 +12,21 @@ env.seed(1)
 s_dim = env.observation_space.shape[0]
 a_dim = env.action_space.shape[0]
 a_bound = env.action_space.high
+C = np.zeros(env.n)
+
+for i in range(env.n):
+    C[i] = env.C_max[i]
+C_sum = sum(C)
 m_max = env.max_m
+
+
+def c_t_sum(c, t):
+    ss = sum(c)
+    while t != 0:
+        ss -= c[t]
+        t = t - 1
+    return ss
+
 
 D_list = [1]
 for choose in D_list:
@@ -40,7 +54,16 @@ for choose in D_list:
         for j in range(MAX_EP_STEPS):
             action_n = np.zeros((env.n, env.n))
             for p in range(env.n):
-                action_n[p][p] = 20
+                sum_off = obs_n[p][-1] * 15
+                for t in range(env.n):
+                    if t == p:
+                        continue
+                    tt = C[t] * sum_off / C_sum + 0.333
+                    action_n[p][t] = int(tt)
+                    if action_n[p][t] > obs_n[p][env.n + t] * env.net_speed_max:
+                        action_n[p][t] = obs_n[p][env.n + t] * env.net_speed_max
+                sum_off = sum_off - sum(action_n[p])
+                action_n[p][p] = sum_off + obs_n[p][p]*15
                 while not env.is_excu_a(p, action_n[p]):
                     action_n[p][p] -= 1
 
@@ -61,14 +84,17 @@ for choose in D_list:
 
             if j == MAX_EP_STEPS - 1:
                 tt = 2.0
-                f = open("./test/local/episode-%.1f-%.2f.txt" % (env.n, tt), "a")
+                f = open("./test/LB/episode-%.1f-%.2f.txt" % (env.n, tt), "a")
                 f.write("%0.2f %0.2f %d %d %d\n" % (ep_reward, ep_energy, ep_queue, ep_drop, sum(arri)))
                 f.close()
                 for p in range(env.n):
-                    f = open("./test/local/agent-%d-%.2f.txt" % (p, tt), "a")
+                    f = open("./test/LB/agent-%d-%.2f.txt" % (p, tt), "a")
                     f.write("%0.2f %0.2f %d %d %d\n"
                             % (agent_reward[p], agent_energy[p], agent_queue[p], agent_drop[p], arri[p]))
                     f.close()
                 print('Episode:', i, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % SIGMA, 'test: ', test,
                       ' arriv: ', arri)
                 break
+
+
+

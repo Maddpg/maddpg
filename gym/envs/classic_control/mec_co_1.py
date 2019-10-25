@@ -35,7 +35,7 @@ class Mec_co_1(gym.Env):
         self.aL = 0.1125
         self.aH = 0.1125
 
-        self.W = 2.5   # 若改变，注意后续取整问题
+        self.W = 1.0   # 若改变，注意后续取整问题
         self.D = 1.0
         self.C_delta = 1
 
@@ -90,7 +90,7 @@ class Mec_co_1(gym.Env):
         f.close()
 
     def is_excu_a(self, p, a):
-        limit = self.state[p][2 * self.n]
+        limit = self.state[p][-1]
         rest = sum(a) - limit
         if (rest - a[p] <= 0) and (rest <= self.state[p][p]):
             return True
@@ -191,7 +191,7 @@ class Mec_co_1(gym.Env):
         return self.state/self.one, reward, False, {}, E*10, Q, drop
 
     def reset(self, choose):
-        list_lambda = [[0, 1, 2, 3], [2, 3, 4, 5], [5, 5, 5, 5], [3, 3, 3, 3], [5, 5, 5, 5]]
+        list_lambda = [[0, 1, 2, 3], [2, 3, 4, 5], [7, 7, 7, 7], [3, 3, 3, 3], [5, 5, 5, 5]]
         self.lamda = list_lambda[choose].copy()
 
         # 载入文件

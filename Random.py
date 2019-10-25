@@ -2,7 +2,7 @@ import gym
 import numpy as np
 
 ENV_NAME = 'CO-v0'
-MAX_EPISODES = 100
+MAX_EPISODES = 10
 MAX_EP_STEPS = 1000
 
 env = gym.make(ENV_NAME)
@@ -14,7 +14,7 @@ a_dim = env.action_space.shape[0]
 a_bound = env.action_space.high
 m_max = env.max_m
 
-D_list = [3]
+D_list = [1]
 for choose in D_list:
 
     v_t = 0
@@ -47,7 +47,7 @@ for choose in D_list:
                     if count == 100:
                         action_n[p] = np.zeros(env.n)
 
-            new_obs_n, r_n, done, info, e_n, q_n, drop = env.step(action_n, 0)
+            new_obs_n, r_n, done, info, e_n, q_n, drop = env.step(action_n, 1)
 
             for p, (r, e, q, d) in enumerate(zip(r_n, e_n, q_n, drop)):
                 ep_reward += r
@@ -63,7 +63,7 @@ for choose in D_list:
             obs_n = new_obs_n.copy()
 
             if j == MAX_EP_STEPS - 1:
-                tt = 1
+                tt = 2.0
                 f = open("./test/random/episode-%.1f-%.2f.txt" % (env.n, tt), "a")
                 f.write("%0.2f %0.2f %d %d %d\n" % (ep_reward, ep_energy, ep_queue, ep_drop, sum(arri)))
                 f.close()

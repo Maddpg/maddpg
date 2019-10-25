@@ -11,12 +11,12 @@ import sys
 
 MAX_EPISODES = 5000
 MAX_EP_STEPS = 1000
-LR_A = 0.00001    # learning rate for actor
+LR_A = 0.00003    # learning rate for actor
 LR_C = 0.0003   # learning rate for critic
-GAMMA = 0.99     # reward discount  TODO
+GAMMA = 0.5     # reward discount  TODO
 TAU = 0.001      # soft replacement
 MEMORY_CAPACITY = 30000
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 
 
 RENDER = False
@@ -220,11 +220,6 @@ def all_learn(agents, j):
 
     if j % 1 == 0:
         actor_a = [agent.get_a(s_n[p]) for p, agent in enumerate(agents)]
-
-        # for i in range(env.n):
-        #     for p in range(BATCH_SIZE):
-        #         for q in range(env.n):
-        #             actor_a[i][p][q] = int(actor_a[i][p][q] * a_bound) / a_bound
 
         for p, agent in enumerate(agents):
             act_n = np.delete(actor_a, p, 0)
